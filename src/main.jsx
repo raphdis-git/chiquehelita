@@ -4,7 +4,8 @@ import { Search, ShoppingBag, Menu, X, Plus, Minus, MessageCircle, Truck, Shield
 import './styles.css';
 
 const BASE = import.meta.env.BASE_URL;
-const logo = `${BASE}assets/logo-original.png`;
+// Logo original da loja. O caminho absoluto evita problemas de resolução no GitHub Pages.
+const logo = '/chiquehelita/assets/logo-original.png?v=2';
 const product = {
   id: 1,
   name: 'Vestido Alice',
