@@ -4,6 +4,7 @@ import { Search, ShoppingBag, Menu, X, Plus, Minus, MessageCircle, Truck, Shield
 import './styles.css';
 
 const BASE = import.meta.env.BASE_URL;
+const logo = `${BASE}assets/logo-original.png`;
 const product = {
   id: 1,
   name: 'Vestido Alice',
@@ -29,7 +30,7 @@ function App() {
     <div className="app">
       <header className="header">
         <button className="icon mobile" aria-label="Abrir menu"><Menu size={22}/></button>
-        <a className="brand-logo" href="#inicio" aria-label="Chique Helita"><img src={`${BASE}assets/logo.svg`} alt="Chique Helita" /></a>
+        <a className="brand-logo" href="#inicio" aria-label="Chique Helita"><img src={logo} alt="Chique Helita" /></a>
         <nav><a href="#inicio">Início</a><a href="#catalogo">Vestidos</a><a href="#promocoes">Promoções</a><a href="#sobre">Sobre nós</a></nav>
         <div className="actions"><button className="icon" aria-label="Buscar"><Search size={20}/></button><button className="icon cart-button" aria-label="Carrinho" onClick={() => setCartOpen(true)}><ShoppingBag size={21}/>{qty > 0 && <span>{qty}</span>}</button></div>
       </header>
@@ -53,7 +54,7 @@ function App() {
         <section id="promocoes" className="promo"><div><p className="eyebrow">OFERTAS ESPECIAIS</p><h2>Seu próximo look<br/><em>começa aqui.</em></h2><p>Fique de olho nas novidades e condições especiais da CHIQUEHELITA.</p><a className="button" href="#catalogo">Ver produtos</a></div></section>
       </main>
 
-      <footer id="sobre"><div className="footer-brand"><img src={`${BASE}assets/logo.svg`} alt="Chique Helita"/><p>Moda feminina com elegância e personalidade.</p></div><div><h4>Atendimento</h4><p>Segunda a sábado</p><p>WhatsApp da loja</p></div><div><h4>Links</h4><p>Instagram</p><p>Política de privacidade</p></div></footer>
+      <footer id="sobre"><div className="footer-brand"><img src={logo} alt="Chique Helita"/><p>Moda feminina com elegância e personalidade.</p></div><div><h4>Atendimento</h4><p>Segunda a sábado</p><p>WhatsApp da loja</p></div><div><h4>Links</h4><p>Instagram</p><p>Política de privacidade</p></div></footer>
 
       {cartOpen && <div className="overlay" onClick={() => setCartOpen(false)}><aside className="cart" onClick={e => e.stopPropagation()}><div className="cart-head"><h2>Seu carrinho</h2><button className="icon" onClick={() => setCartOpen(false)} aria-label="Fechar"><X/></button></div>{qty === 0 ? <p className="empty">Seu carrinho está vazio.</p> : <><div className="cart-item"><img src={product.image} alt="Vestido Alice"/><div><strong>{product.name}</strong><span>Tamanho {size}</span><b>{money(product.price)}</b><div className="stepper"><button onClick={() => setQty(q => Math.max(0, q - 1))}><Minus size={15}/></button><span>{qty}</span><button onClick={() => setQty(q => q + 1)}><Plus size={15}/></button></div></div></div><div className="cart-total"><span>Subtotal</span><strong>{money(subtotal)}</strong></div><a className="button full" href={`https://wa.me/?text=${encodeURIComponent(`Olá! Quero comprar ${qty}x ${product.name}, tamanho ${size}.`)}`} target="_blank" rel="noreferrer"><MessageCircle size={18}/> Finalizar pelo WhatsApp</a></>}</aside></div>}
     </div>
