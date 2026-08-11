@@ -24,3 +24,9 @@ npm run dev
 ```bash
 npm run build
 ```
+
+## Deploy
+
+O projeto é publicado automaticamente pelo GitHub Actions sempre que há uma alteração no `main`.
+
+Validação de deploy: 2026-08-11.
