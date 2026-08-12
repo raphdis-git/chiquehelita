@@ -28,8 +28,18 @@ export function getAvailableProducts() {
   return products.filter((product) => product.active);
 }
 
-export function getProductPrice(product) {
+export function getRetailPrice(product) {
   return product.promotionalPrice ?? product.price;
+}
+
+export function isWholesaleQuantity(product, quantity = 0) {
+  return quantity >= product.minimumWholesaleQuantity;
+}
+
+export function getProductPrice(product, quantity = 0) {
+  return isWholesaleQuantity(product, quantity)
+    ? product.wholesalePrice
+    : getRetailPrice(product);
 }
 
 export function getTotalStock(product) {
