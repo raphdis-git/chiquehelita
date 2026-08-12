@@ -1,5 +1,10 @@
 const BASE = import.meta.env.BASE_URL;
 
+export const storeSettings = {
+  minimumWholesaleQuantity: 6,
+  whatsapp: '556285166201',
+};
+
 export const products = [
   {
     id: 'vestido-alice',
@@ -8,7 +13,6 @@ export const products = [
     price: 99.9,
     promotionalPrice: null,
     wholesalePrice: 79.9,
-    minimumWholesaleQuantity: 6,
     featured: true,
     active: true,
     description:
@@ -32,12 +36,12 @@ export function getRetailPrice(product) {
   return product.promotionalPrice ?? product.price;
 }
 
-export function isWholesaleQuantity(product, quantity = 0) {
-  return quantity >= product.minimumWholesaleQuantity;
+export function isWholesaleCart(totalQuantity = 0) {
+  return totalQuantity >= storeSettings.minimumWholesaleQuantity;
 }
 
-export function getProductPrice(product, quantity = 0) {
-  return isWholesaleQuantity(product, quantity)
+export function getProductPrice(product, totalCartQuantity = 0) {
+  return isWholesaleCart(totalCartQuantity)
     ? product.wholesalePrice
     : getRetailPrice(product);
 }
