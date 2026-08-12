@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Search, ShoppingBag, Menu, X, Plus, Minus, MessageCircle, Truck, ShieldCheck, Heart } from 'lucide-react';
-import logo from './assets/logo-original.png';
+import logo from './assets/Logo.png';
 import './styles.css';
 
 const BASE = import.meta.env.BASE_URL;
