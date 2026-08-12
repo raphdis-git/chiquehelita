@@ -13,6 +13,10 @@ export const products = [
     price: 99.9,
     promotionalPrice: null,
     wholesalePrice: 79.9,
+    wholesaleRule: {
+      mode: 'inherit',
+      minimumQuantity: null,
+    },
     featured: true,
     active: true,
     description:
@@ -40,8 +44,22 @@ export function isWholesaleCart(totalQuantity = 0) {
   return totalQuantity >= storeSettings.minimumWholesaleQuantity;
 }
 
-export function getProductPrice(product, totalCartQuantity = 0) {
-  return isWholesaleCart(totalCartQuantity)
+export function getProductWholesaleMinimum(product) {
+  return product.wholesaleRule?.mode === 'product'
+    ? (product.wholesaleRule.minimumQuantity ?? storeSettings.minimumWholesaleQuantity)
+    : storeSettings.minimumWholesaleQuantity;
+}
+
+export function isProductWholesale(product, productQuantity = 0, totalCartQuantity = 0) {
+  const mode = product.wholesaleRule?.mode ?? 'inherit';
+
+  if (mode === 'disabled') return false;
+  if (mode === 'product') return productQuantity >= getProductWholesaleMinimum(product);
+  return isWholesaleCart(totalCartQuantity);
+}
+
+export function getProductPrice(product, productQuantity = 0, totalCartQuantity = 0) {
+  return isProductWholesale(product, productQuantity, totalCartQuantity)
     ? product.wholesalePrice
     : getRetailPrice(product);
 }
