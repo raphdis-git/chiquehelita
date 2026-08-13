@@ -4,13 +4,17 @@ import { Search, ShoppingBag, Menu, X, Plus, Minus, MessageCircle, Truck, Shield
 import logo from './assets/Logo.png';
 import {
   getAvailableProducts,
-  getProductPrice,
   getProductWholesaleMinimum,
   getRetailPrice,
   getTotalStock,
-  isProductWholesale,
   storeSettings,
 } from './data/products';
+import {
+  getCartLines,
+  getCartSummary,
+  getProductCartQuantity,
+  makeCartKey,
+} from './data/cart';
 import './styles.css';
 
 function money(value) {
@@ -19,65 +23,116 @@ function money(value) {
 
 function App() {
   const products = useMemo(() => getAvailableProducts(), []);
-  const product = products[0];
-  const initialSize = product?.sizes.find((item) => item.stock > 0)?.label ?? '';
+  const featuredProduct = products.find((item) => item.featured) ?? products[0];
   const [cartOpen, setCartOpen] = useState(false);
-  const [size, setSize] = useState(initialSize);
   const [cart, setCart] = useState({});
+  const [selectedSizes, setSelectedSizes] = useState(() => Object.fromEntries(
+    products.map((product) => [product.id, product.sizes.find((item) => item.stock > 0)?.label ?? '']),
+  ));
 
-  if (!product) return <main className="empty-store"><h1>CHIQUEHELITA</h1><p>Novidades chegando em breve.</p></main>;
+  if (!featuredProduct) {
+    return <main className="empty-store"><h1>CHIQUEHELITA</h1><p>Novidades chegando em breve.</p></main>;
+  }
 
-  const selectedSize = product.sizes.find((item) => item.label === size);
-  const productQuantity = Object.values(cart).reduce((total, quantity) => total + quantity, 0);
-  const totalCartQuantity = productQuantity;
-  const retailPrice = getRetailPrice(product);
-  const wholesaleActive = isProductWholesale(product, productQuantity, totalCartQuantity);
-  const currentPrice = getProductPrice(product, productQuantity, totalCartQuantity);
-  const subtotal = productQuantity * currentPrice;
-  const totalStock = getTotalStock(product);
-  const mode = product.wholesaleRule?.mode ?? 'inherit';
-  const wholesaleMinimum = getProductWholesaleMinimum(product);
-  const targetMinimum = mode === 'product' ? wholesaleMinimum : storeSettings.minimumWholesaleQuantity;
-  const piecesToWholesale = Math.max(0, targetMinimum - (mode === 'product' ? productQuantity : totalCartQuantity));
-  const selectedQuantity = cart[size] ?? 0;
-  const canAddSelected = Boolean(selectedSize?.stock) && selectedQuantity < selectedSize.stock;
-  const cartLines = product.sizes.filter((item) => (cart[item.label] ?? 0) > 0);
+  const cartLines = getCartLines(products, cart);
+  const cartSummary = getCartSummary(products, cart);
+  const summaryByProduct = Object.fromEntries(cartSummary.items.map((item) => [item.productId, item]));
 
-  function changeQuantity(label, delta) {
-    const sizeData = product.sizes.find((item) => item.label === label);
-    if (!sizeData) return;
+  function changeQuantity(product, size, delta) {
+    const key = makeCartKey(product.id, size.label);
     setCart((current) => {
-      const nextQuantity = Math.max(0, Math.min(sizeData.stock, (current[label] ?? 0) + delta));
+      const nextQuantity = Math.max(0, Math.min(size.stock, (current[key] ?? 0) + delta));
       const next = { ...current };
-      if (nextQuantity === 0) delete next[label]; else next[label] = nextQuantity;
+      if (nextQuantity === 0) delete next[key]; else next[key] = nextQuantity;
       return next;
     });
   }
 
-  function add() {
-    if (!canAddSelected) return;
-    changeQuantity(size, 1);
+  function addSelected(product) {
+    const label = selectedSizes[product.id];
+    const size = product.sizes.find((item) => item.label === label);
+    if (!size) return;
+    const key = makeCartKey(product.id, size.label);
+    if ((cart[key] ?? 0) >= size.stock) return;
+    changeQuantity(product, size, 1);
     setCartOpen(true);
   }
 
-  const orderDetails = cartLines.map((item) => `${cart[item.label]}x ${product.name} tam. ${item.label}`).join(', ');
-  const wholesaleRuleText = mode === 'disabled'
-    ? 'Este produto não participa das regras de atacado.'
-    : mode === 'product'
-      ? `Regra específica: este produto entra no atacado somente a partir de ${wholesaleMinimum} unidades dele.`
-      : `Regra geral: ao atingir ${storeSettings.minimumWholesaleQuantity} peças no carrinho, este produto recebe o preço de atacado.`;
+  function ruleText(product) {
+    const mode = product.wholesaleRule?.mode ?? 'inherit';
+    if (mode === 'disabled') return 'Este produto não participa das regras de atacado.';
+    if (mode === 'product') return `Regra específica: atacado a partir de ${getProductWholesaleMinimum(product)} unidades deste produto.`;
+    return `Regra geral: atacado quando o carrinho atingir ${storeSettings.minimumWholesaleQuantity} peças.`;
+  }
+
+  const whatsappLines = cartLines.map((line) => {
+    const summary = summaryByProduct[line.product.id];
+    return `${line.quantity}x ${line.product.name} tam. ${line.size.label} (${summary?.wholesale ? 'atacado' : 'varejo'} a ${money(summary?.unitPrice ?? 0)})`;
+  }).join(', ');
 
   return (
     <div className="app">
-      <header className="header"><button className="icon mobile" aria-label="Abrir menu"><Menu size={22}/></button><a className="brand-logo" href="#inicio" aria-label="Chique Helita"><img src={logo} alt="Chique Helita" /></a><nav><a href="#inicio">Início</a><a href="#catalogo">Vestidos</a><a href="#promocoes">Promoções</a><a href="#sobre">Sobre nós</a></nav><div className="actions"><button className="icon" aria-label="Buscar"><Search size={20}/></button><button className="icon cart-button" aria-label="Carrinho" onClick={() => setCartOpen(true)}><ShoppingBag size={21}/>{productQuantity > 0 && <span>{productQuantity}</span>}</button></div></header>
+      <header className="header">
+        <button className="icon mobile" aria-label="Abrir menu"><Menu size={22}/></button>
+        <a className="brand-logo" href="#inicio" aria-label="Chique Helita"><img src={logo} alt="Chique Helita" /></a>
+        <nav><a href="#inicio">Início</a><a href="#catalogo">Vestidos</a><a href="#promocoes">Promoções</a><a href="#sobre">Sobre nós</a></nav>
+        <div className="actions"><button className="icon" aria-label="Buscar"><Search size={20}/></button><button className="icon cart-button" aria-label="Carrinho" onClick={() => setCartOpen(true)}><ShoppingBag size={21}/>{cartSummary.totalQuantity > 0 && <span>{cartSummary.totalQuantity}</span>}</button></div>
+      </header>
+
       <main>
-        <section id="inicio" className="hero"><div className="hero-copy"><p className="eyebrow">MODA FEMININA</p><h1>Elegância que<br/><em>veste você.</em></h1><p className="hero-text">Vestidos femininos escolhidos para valorizar sua beleza, com conforto e personalidade.</p><a className="button" href="#catalogo">Ver coleção</a></div><div className="hero-art"><img src={product.image} alt={`${product.name} CHIQUEHELITA`}/><div className="hero-tag">{product.name.toUpperCase()}<br/><small>{money(retailPrice)}</small></div></div></section>
+        <section id="inicio" className="hero">
+          <div className="hero-copy"><p className="eyebrow">MODA FEMININA</p><h1>Elegância que<br/><em>veste você.</em></h1><p className="hero-text">Vestidos femininos escolhidos para valorizar sua beleza, com conforto e personalidade.</p><a className="button" href="#catalogo">Ver coleção</a></div>
+          <div className="hero-art"><img src={featuredProduct.image} alt={`${featuredProduct.name} CHIQUEHELITA`}/><div className="hero-tag">{featuredProduct.name.toUpperCase()}<br/><small>{money(getRetailPrice(featuredProduct))}</small></div></div>
+        </section>
+
         <section className="benefits"><div><ShieldCheck size={22}/><strong>Compra segura</strong><span>Seu pedido protegido</span></div><div><Truck size={22}/><strong>Atendimento personalizado</strong><span>Fale conosco pelo WhatsApp</span></div><div><Heart size={22}/><strong>Moda feminina</strong><span>Escolhas feitas para você</span></div></section>
-        <section id="catalogo" className="products-section"><div className="section-head"><div><p className="eyebrow">NOSSA COLEÇÃO</p><h2>Peças em destaque</h2><p>O atacado pode seguir a regra geral da loja ou uma regra específica do produto.</p></div><a href="#catalogo">Ver todos →</a></div><article className="product-card"><div className="product-image"><img src={product.image} alt={product.name}/>{product.featured && <span className="badge">Destaque</span>}<button className="heart-button" aria-label="Favoritar"><Heart size={19}/></button></div><div className="product-info"><p className="category">{product.category.toUpperCase()}</p><h3>{product.name}</h3><p className="description">{product.description}</p><div className="prices">{product.promotionalPrice && <span className="old-price">{money(product.price)}</span>}<strong>{money(retailPrice)}</strong>{mode !== 'disabled' && <span>Atacado: {money(product.wholesalePrice)}</span>}</div><div className="wholesale-rule">{wholesaleRuleText}</div><div className="stock-summary">{totalStock > 0 ? `${totalStock} unidades disponíveis` : 'Produto esgotado'}</div><div className="sizes"><span>Tamanho</span>{product.sizes.map((item) => <button key={item.label} disabled={item.stock === 0} title={`${item.stock} em estoque`} className={size === item.label ? 'selected' : ''} onClick={() => setSize(item.label)}>{item.label}<small>{item.stock}</small></button>)}</div><button className="button full" disabled={!canAddSelected} onClick={add}>{canAddSelected ? `Adicionar tamanho ${size}` : 'Estoque deste tamanho atingido'}</button><small>{product.sizes.map((item) => `${item.label} (${item.reference})`).join(' · ')}</small></div></article></section>
+
+        <section id="catalogo" className="products-section">
+          <div className="section-head"><div><p className="eyebrow">NOSSA COLEÇÃO</p><h2>Peças em destaque</h2><p>O carrinho já está preparado para combinar vários modelos e tamanhos no mesmo pedido.</p></div><a href="#catalogo">Ver todos →</a></div>
+          <div className="products-list">
+            {products.map((product) => {
+              const selectedLabel = selectedSizes[product.id];
+              const selectedSize = product.sizes.find((item) => item.label === selectedLabel);
+              const selectedKey = selectedSize ? makeCartKey(product.id, selectedSize.label) : '';
+              const selectedQuantity = selectedKey ? (cart[selectedKey] ?? 0) : 0;
+              const canAdd = Boolean(selectedSize?.stock) && selectedQuantity < selectedSize.stock;
+              const summary = summaryByProduct[product.id];
+              const mode = product.wholesaleRule?.mode ?? 'inherit';
+              return (
+                <article className="product-card" key={product.id}>
+                  <div className="product-image"><img src={product.image} alt={product.name}/>{product.featured && <span className="badge">Destaque</span>}<button className="heart-button" aria-label="Favoritar"><Heart size={19}/></button></div>
+                  <div className="product-info">
+                    <p className="category">{product.category.toUpperCase()}</p><h3>{product.name}</h3><p className="description">{product.description}</p>
+                    <div className="prices">{product.promotionalPrice && <span className="old-price">{money(product.price)}</span>}<strong>{money(getRetailPrice(product))}</strong>{mode !== 'disabled' && <span>Atacado: {money(product.wholesalePrice)}</span>}</div>
+                    <div className="wholesale-rule">{ruleText(product)}{summary?.quantity > 0 && <><br/><strong>{summary.wholesale ? 'Preço de atacado ativo neste produto.' : 'Preço de varejo ativo neste produto.'}</strong></>}</div>
+                    <div className="stock-summary">{getTotalStock(product) > 0 ? `${getTotalStock(product)} unidades disponíveis` : 'Produto esgotado'}</div>
+                    <div className="sizes"><span>Tamanho</span>{product.sizes.map((item) => <button key={item.label} disabled={item.stock === 0} title={`${item.stock} em estoque`} className={selectedLabel === item.label ? 'selected' : ''} onClick={() => setSelectedSizes((current) => ({ ...current, [product.id]: item.label }))}>{item.label}<small>{item.stock}</small></button>)}</div>
+                    <button className="button full" disabled={!canAdd} onClick={() => addSelected(product)}>{canAdd ? `Adicionar tamanho ${selectedLabel}` : 'Estoque deste tamanho atingido'}</button>
+                    <small>{product.sizes.map((item) => `${item.label} (${item.reference})`).join(' · ')}</small>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+
         <section id="promocoes" className="promo"><div><p className="eyebrow">OFERTAS ESPECIAIS</p><h2>Seu próximo look<br/><em>começa aqui.</em></h2><p>Fique de olho nas novidades e condições especiais da CHIQUEHELITA.</p><a className="button" href="#catalogo">Ver produtos</a></div></section>
       </main>
+
       <footer id="sobre"><div className="footer-brand"><img src={logo} alt="Chique Helita"/><p>Moda feminina com elegância e personalidade.</p></div><div><h4>Atendimento</h4><p>Segunda a sábado</p><p>WhatsApp da loja</p></div><div><h4>Links</h4><p>Instagram</p><p>Política de privacidade</p></div></footer>
-      {cartOpen && <div className="overlay" onClick={() => setCartOpen(false)}><aside className="cart" onClick={(event) => event.stopPropagation()}><div className="cart-head"><h2>Seu carrinho</h2><button className="icon" onClick={() => setCartOpen(false)} aria-label="Fechar"><X/></button></div>{productQuantity === 0 ? <p className="empty">Seu carrinho está vazio.</p> : <>{cartLines.map((item) => <div className="cart-item" key={item.label}><img src={product.image} alt={product.name}/><div><strong>{product.name}</strong><span>Tamanho {item.label}</span><span>Estoque: {item.stock}</span><b>{money(currentPrice)} por peça</b><div className="stepper"><button onClick={() => changeQuantity(item.label, -1)}><Minus size={15}/></button><span>{cart[item.label]}</span><button disabled={cart[item.label] >= item.stock} onClick={() => changeQuantity(item.label, 1)}><Plus size={15}/></button></div></div></div>)}{mode !== 'disabled' && <div className={`wholesale-cart-status ${wholesaleActive ? 'active' : ''}`}>{wholesaleActive ? `Atacado ativado para ${product.name}.` : mode === 'product' ? `Adicione mais ${piecesToWholesale} ${piecesToWholesale === 1 ? 'unidade' : 'unidades'} deste produto para liberar o atacado.` : `Adicione mais ${piecesToWholesale} ${piecesToWholesale === 1 ? 'peça' : 'peças'} no carrinho para liberar o atacado.`}</div>}<div className="cart-total"><span>Total {wholesaleActive ? '(atacado)' : '(varejo)'} · {productQuantity} peças</span><strong>{money(subtotal)}</strong></div><a className="button full" href={`https://wa.me/${storeSettings.whatsapp}?text=${encodeURIComponent(`Olá! Quero fazer este pedido: ${orderDetails}. Total de peças: ${productQuantity}. Modalidade deste produto: ${wholesaleActive ? 'ATACADO' : 'VAREJO'}. Valor unitário atual: ${money(currentPrice)}. Total: ${money(subtotal)}.`)}`} target="_blank" rel="noreferrer"><MessageCircle size={18}/> Finalizar pelo WhatsApp</a></>}</aside></div>}
+
+      {cartOpen && <div className="overlay" onClick={() => setCartOpen(false)}><aside className="cart" onClick={(event) => event.stopPropagation()}>
+        <div className="cart-head"><h2>Seu carrinho</h2><button className="icon" onClick={() => setCartOpen(false)} aria-label="Fechar"><X/></button></div>
+        {cartSummary.totalQuantity === 0 ? <p className="empty">Seu carrinho está vazio.</p> : <>
+          {cartLines.map((line) => {
+            const summary = summaryByProduct[line.product.id];
+            return <div className="cart-item" key={makeCartKey(line.product.id, line.size.label)}><img src={line.product.image} alt={line.product.name}/><div><strong>{line.product.name}</strong><span>Tamanho {line.size.label}</span><span>Estoque: {line.size.stock}</span><b>{money(summary?.unitPrice ?? 0)} por peça · {summary?.wholesale ? 'atacado' : 'varejo'}</b><div className="stepper"><button onClick={() => changeQuantity(line.product, line.size, -1)}><Minus size={15}/></button><span>{line.quantity}</span><button disabled={line.quantity >= line.size.stock} onClick={() => changeQuantity(line.product, line.size, 1)}><Plus size={15}/></button></div></div></div>;
+          })}
+          <div className={`wholesale-cart-status ${cartSummary.generalWholesaleActive ? 'active' : ''}`}>{cartSummary.generalWholesaleActive ? `Regra geral de atacado atingida com ${cartSummary.totalQuantity} peças.` : `Faltam ${Math.max(0, storeSettings.minimumWholesaleQuantity - cartSummary.totalQuantity)} peças para atingir a regra geral de atacado.`}</div>
+          <div className="cart-total"><span>Total do pedido · {cartSummary.totalQuantity} peças</span><strong>{money(cartSummary.total)}</strong></div>
+          <a className="button full" href={`https://wa.me/${storeSettings.whatsapp}?text=${encodeURIComponent(`Olá! Quero fazer este pedido: ${whatsappLines}. Total de peças: ${cartSummary.totalQuantity}. Total do pedido: ${money(cartSummary.total)}.`)}`} target="_blank" rel="noreferrer"><MessageCircle size={18}/> Finalizar pelo WhatsApp</a>
+        </>}
+      </aside></div>}
     </div>
   );
 }
