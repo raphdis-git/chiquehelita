@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Search, ShoppingBag, Menu, X, Plus, Minus, MessageCircle, Truck, ShieldCheck, Heart } from 'lucide-react';
 import logo from './assets/Logo.png';
+import AdminApp from './admin/AdminApp';
 import {
   getAvailableProducts,
   getProductWholesaleMinimum,
@@ -137,4 +138,8 @@ function App() {
   );
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+const isAdminRoute = /\/admin\/?$/.test(window.location.pathname);
+
+createRoot(document.getElementById('root')).render(
+  isAdminRoute ? <AdminApp /> : <App />,
+);
