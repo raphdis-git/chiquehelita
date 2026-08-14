@@ -5,22 +5,18 @@ import {
   LockKeyhole,
   LogOut,
   PackageCheck,
+  Plus,
   RefreshCw,
   ShieldCheck,
   ShoppingBag,
+  Trash2,
   X,
 } from 'lucide-react';
 import logo from '../assets/Logo.png';
 import { supabase } from '../lib/supabase';
 import './admin.css';
 
-const DEFAULT_SIZES = [
-  { label: 'PP', reference: '36', stock: 0 },
-  { label: 'P', reference: '38', stock: 0 },
-  { label: 'M', reference: '40/42', stock: 0 },
-  { label: 'G', reference: '44/46', stock: 0 },
-  { label: 'GG', reference: '48/50', stock: 0 },
-];
+const SIZE_LABELS = ['PP', 'P', 'M', 'G', 'GG'];
 
 function money(value) {
   return Number(value ?? 0).toLocaleString('pt-BR', {
@@ -47,6 +43,15 @@ function wholesaleLabel(product, generalMinimum) {
   return `Regra geral · ${generalMinimum} peças`;
 }
 
+function makeVariant() {
+  return {
+    color: '',
+    printPattern: '',
+    imageUrl: '',
+    stock: Object.fromEntries(SIZE_LABELS.map((size) => [size, 0])),
+  };
+}
+
 function emptyProductForm() {
   return {
     name: '',
@@ -58,9 +63,10 @@ function emptyProductForm() {
     wholesaleRuleMode: 'inherit',
     wholesaleMinimumQuantity: '',
     imageUrl: '',
+    sizeGuideImageUrl: '',
     featured: false,
     active: true,
-    sizes: DEFAULT_SIZES.map((size) => ({ ...size })),
+    variants: [makeVariant()],
   };
 }
 
@@ -108,14 +114,22 @@ export default function AdminApp() {
           wholesale_rule_mode,
           wholesale_minimum_quantity,
           image_url,
+          size_guide_image_url,
           featured,
           active,
-          product_sizes (
+          product_variants (
             id,
-            label,
-            reference,
-            stock,
-            sort_order
+            color,
+            print_pattern,
+            image_url,
+            sort_order,
+            active,
+            product_variant_stock (
+              id,
+              size,
+              stock,
+              sort_order
+            )
           )
         `)
         .order('created_at', { ascending: false }),
@@ -134,9 +148,13 @@ export default function AdminApp() {
 
     const normalized = (productsResult.data ?? []).map((product) => ({
       ...product,
-      product_sizes: [...(product.product_sizes ?? [])].sort(
-        (a, b) => a.sort_order - b.sort_order,
-      ),
+      product_variants: [...(product.product_variants ?? [])]
+        .sort((a, b) => a.sort_order - b.sort_order)
+        .map((variant) => ({
+          ...variant,
+          product_variant_stock: [...(variant.product_variant_stock ?? [])]
+            .sort((a, b) => a.sort_order - b.sort_order),
+        })),
     }));
 
     setProducts(normalized);
@@ -214,11 +232,36 @@ export default function AdminApp() {
     setProductForm((current) => ({ ...current, [field]: value }));
   }
 
-  function updateSize(index, field, value) {
+  function addVariant() {
     setProductForm((current) => ({
       ...current,
-      sizes: current.sizes.map((size, sizeIndex) =>
-        sizeIndex === index ? { ...size, [field]: value } : size,
+      variants: [...current.variants, makeVariant()],
+    }));
+  }
+
+  function removeVariant(index) {
+    setProductForm((current) => ({
+      ...current,
+      variants: current.variants.filter((_, variantIndex) => variantIndex !== index),
+    }));
+  }
+
+  function updateVariant(index, field, value) {
+    setProductForm((current) => ({
+      ...current,
+      variants: current.variants.map((variant, variantIndex) =>
+        variantIndex === index ? { ...variant, [field]: value } : variant,
+      ),
+    }));
+  }
+
+  function updateVariantStock(index, size, value) {
+    setProductForm((current) => ({
+      ...current,
+      variants: current.variants.map((variant, variantIndex) =>
+        variantIndex === index
+          ? { ...variant, stock: { ...variant.stock, [size]: value } }
+          : variant,
       ),
     }));
   }
@@ -251,6 +294,28 @@ export default function AdminApp() {
       return;
     }
 
+    if (productForm.variants.length === 0) {
+      setProductFormMessage('Cadastre pelo menos uma combinação de cor e estampa.');
+      return;
+    }
+
+    const normalizedVariants = productForm.variants.map((variant) => ({
+      ...variant,
+      color: variant.color.trim(),
+      printPattern: variant.printPattern.trim(),
+    }));
+
+    if (normalizedVariants.some((variant) => !variant.color || !variant.printPattern)) {
+      setProductFormMessage('Preencha cor e estampa em todas as combinações.');
+      return;
+    }
+
+    const combinationKeys = normalizedVariants.map((variant) => `${variant.color.toLowerCase()}::${variant.printPattern.toLowerCase()}`);
+    if (new Set(combinationKeys).size !== combinationKeys.length) {
+      setProductFormMessage('Existem combinações repetidas de cor e estampa.');
+      return;
+    }
+
     setProductSaving(true);
 
     const { data: createdProduct, error: productError } = await supabase
@@ -266,6 +331,7 @@ export default function AdminApp() {
         wholesale_rule_mode: productForm.wholesaleRuleMode,
         wholesale_minimum_quantity: wholesaleMinimum,
         image_url: productForm.imageUrl.trim() || null,
+        size_guide_image_url: productForm.sizeGuideImageUrl.trim() || null,
         featured: productForm.featured,
         active: productForm.active,
       })
@@ -280,19 +346,43 @@ export default function AdminApp() {
       return;
     }
 
-    const sizesPayload = productForm.sizes.map((size, index) => ({
-      product_id: createdProduct.id,
-      label: size.label.trim(),
-      reference: size.reference.trim() || null,
-      stock: Math.max(0, Number(size.stock) || 0),
-      sort_order: index,
-    }));
+    try {
+      const variantsPayload = normalizedVariants.map((variant, index) => ({
+        product_id: createdProduct.id,
+        color: variant.color,
+        print_pattern: variant.printPattern,
+        image_url: variant.imageUrl.trim() || null,
+        sort_order: index,
+        active: true,
+      }));
 
-    const { error: sizesError } = await supabase.from('product_sizes').insert(sizesPayload);
+      const { data: createdVariants, error: variantsError } = await supabase
+        .from('product_variants')
+        .insert(variantsPayload)
+        .select('id, color, print_pattern, sort_order');
 
-    if (sizesError) {
+      if (variantsError || !createdVariants || createdVariants.length !== normalizedVariants.length) {
+        throw new Error('variant_error');
+      }
+
+      const stockPayload = createdVariants.flatMap((createdVariant) => {
+        const sourceVariant = normalizedVariants[createdVariant.sort_order];
+        return SIZE_LABELS.map((size, sizeIndex) => ({
+          variant_id: createdVariant.id,
+          size,
+          stock: Math.max(0, Number(sourceVariant.stock[size]) || 0),
+          sort_order: sizeIndex,
+        }));
+      });
+
+      const { error: stockError } = await supabase
+        .from('product_variant_stock')
+        .insert(stockPayload);
+
+      if (stockError) throw new Error('stock_error');
+    } catch {
       await supabase.from('products').delete().eq('id', createdProduct.id);
-      setProductFormMessage('O produto não pôde ser salvo porque ocorreu um erro nos tamanhos/estoque.');
+      setProductFormMessage('O produto não pôde ser salvo porque ocorreu um erro nas variantes ou no estoque.');
       setProductSaving(false);
       return;
     }
@@ -305,17 +395,20 @@ export default function AdminApp() {
 
   const metrics = useMemo(() => {
     const totalStock = products.reduce(
-      (sum, product) => sum + product.product_sizes.reduce((stock, size) => stock + size.stock, 0),
+      (sum, product) => sum + product.product_variants.reduce(
+        (variantSum, variant) => variantSum + variant.product_variant_stock.reduce(
+          (stockSum, item) => stockSum + item.stock,
+          0,
+        ),
+        0,
+      ),
       0,
     );
-    const activeProducts = products.filter((product) => product.active).length;
-    const featuredProducts = products.filter((product) => product.featured && product.active).length;
 
     return {
       totalProducts: products.length,
-      activeProducts,
+      activeProducts: products.filter((product) => product.active).length,
       totalStock,
-      featuredProducts,
     };
   }, [products]);
 
@@ -333,15 +426,10 @@ export default function AdminApp() {
       <main className="admin-login-page">
         <section className="admin-login-card">
           <img src={logo} alt="Chique Helita" className="admin-logo" />
-
           <div className="admin-login-heading">
             <LockKeyhole size={24} />
-            <div>
-              <h1>Painel Administrativo</h1>
-              <p>Acesso exclusivo da administração</p>
-            </div>
+            <div><h1>Painel Administrativo</h1><p>Acesso exclusivo da administração</p></div>
           </div>
-
           <form onSubmit={handleLogin} className="admin-login-form">
             <label>E-mail<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required /></label>
             <label>Senha<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required /></label>
@@ -366,7 +454,7 @@ export default function AdminApp() {
       </header>
 
       <div className="admin-shell">
-        <section className="admin-welcome"><ShieldCheck size={32} /><div><p className="admin-eyebrow">ACESSO PROTEGIDO</p><h1>Painel Administrativo</h1><p>Produtos, estoque e regras comerciais agora já estão sendo lidos diretamente do Supabase.</p></div></section>
+        <section className="admin-welcome"><ShieldCheck size={32} /><div><p className="admin-eyebrow">ACESSO PROTEGIDO</p><h1>Painel Administrativo</h1><p>Produtos, variantes e estoque são lidos diretamente do Supabase.</p></div></section>
 
         <section className="admin-metrics" aria-label="Resumo da loja">
           <article><ShoppingBag size={22}/><span>Produtos cadastrados</span><strong>{metrics.totalProducts}</strong></article>
@@ -377,8 +465,8 @@ export default function AdminApp() {
 
         <section className="admin-panel">
           <div className="admin-panel-heading">
-            <div><p className="admin-eyebrow">CATÁLOGO</p><h2>Produtos e estoque</h2><p>Cadastre novos produtos e acompanhe os dados salvos no banco.</p></div>
-            <button className="admin-primary-button" type="button" onClick={openNewProduct}>+ Novo produto</button>
+            <div><p className="admin-eyebrow">CATÁLOGO</p><h2>Produtos e estoque</h2><p>Estoque controlado por cor, estampa e tamanho.</p></div>
+            <button className="admin-primary-button" type="button" onClick={openNewProduct}><Plus size={17}/>Novo produto</button>
           </div>
 
           {message && <p className="admin-success-message">{message}</p>}
@@ -390,16 +478,34 @@ export default function AdminApp() {
           ) : (
             <div className="admin-product-grid">
               {products.map((product) => {
-                const stock = product.product_sizes.reduce((sum, size) => sum + size.stock, 0);
+                const stock = product.product_variants.reduce(
+                  (sum, variant) => sum + variant.product_variant_stock.reduce((subtotal, item) => subtotal + item.stock, 0),
+                  0,
+                );
                 const price = product.promotional_price ?? product.price;
+
                 return (
                   <article className="admin-product-card" key={product.id}>
-                    <div className="admin-product-image-wrap">{product.image_url ? <img src={product.image_url} alt={product.name}/> : <div className="admin-no-image">Sem imagem</div>}<span className={`admin-status ${product.active ? 'active' : 'inactive'}`}>{product.active ? 'Ativo' : 'Inativo'}</span></div>
+                    <div className="admin-product-image-wrap">
+                      {product.image_url ? <img src={product.image_url} alt={product.name}/> : <div className="admin-no-image">Sem imagem</div>}
+                      <span className={`admin-status ${product.active ? 'active' : 'inactive'}`}>{product.active ? 'Ativo' : 'Inativo'}</span>
+                    </div>
                     <div className="admin-product-body">
                       <div className="admin-product-title-row"><div><small>{product.category}</small><h3>{product.name}</h3></div>{product.featured && <span className="admin-featured">Destaque</span>}</div>
                       <div className="admin-price-row"><div><span>Varejo</span><strong>{money(price)}</strong></div><div><span>Atacado</span><strong>{product.wholesale_rule_mode === 'disabled' ? '—' : money(product.wholesale_price)}</strong></div></div>
                       <div className="admin-rule-box"><span>Regra de atacado</span><strong>{wholesaleLabel(product, generalMinimum)}</strong></div>
-                      <div className="admin-size-list">{product.product_sizes.map((size) => <div key={size.id}><span>{size.label}<small>{size.reference ? ` (${size.reference})` : ''}</small></span><strong>{size.stock}</strong></div>)}</div>
+
+                      <div className="admin-variant-list">
+                        {product.product_variants.map((variant) => (
+                          <div className="admin-variant-summary" key={variant.id}>
+                            <div className="admin-variant-summary-head"><strong>{variant.color}</strong><span>{variant.print_pattern}</span></div>
+                            <div className="admin-size-list">
+                              {variant.product_variant_stock.map((item) => <div key={item.id}><span>{item.size}</span><strong>{item.stock}</strong></div>)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
                       <div className="admin-product-footer"><span>Estoque total</span><strong>{stock} peças</strong></div>
                     </div>
                   </article>
@@ -413,48 +519,66 @@ export default function AdminApp() {
       {productFormOpen && (
         <div className="admin-modal-backdrop" onClick={() => !productSaving && setProductFormOpen(false)}>
           <section className="admin-modal" onClick={(event) => event.stopPropagation()}>
-            <div className="admin-modal-heading">
-              <div><p className="admin-eyebrow">CATÁLOGO</p><h2>Novo produto</h2><p>Preencha os dados comerciais e o estoque inicial.</p></div>
-              <button className="admin-modal-close" type="button" onClick={() => setProductFormOpen(false)} disabled={productSaving} aria-label="Fechar"><X size={20}/></button>
+            <div className="admin-modal-head">
+              <div><p className="admin-eyebrow">CADASTRO</p><h2>Novo produto</h2></div>
+              <button type="button" className="admin-icon-button" onClick={() => setProductFormOpen(false)} disabled={productSaving}><X size={20}/></button>
             </div>
 
             <form className="admin-product-form" onSubmit={handleCreateProduct}>
               <div className="admin-form-grid two">
-                <label>Nome do produto<input value={productForm.name} onChange={(event) => updateProductField('name', event.target.value)} required /></label>
-                <label>Categoria<input value={productForm.category} onChange={(event) => updateProductField('category', event.target.value)} required /></label>
+                <label>Nome do produto<input value={productForm.name} onChange={(e) => updateProductField('name', e.target.value)} required /></label>
+                <label>Categoria<input value={productForm.category} onChange={(e) => updateProductField('category', e.target.value)} /></label>
               </div>
 
-              <label>Descrição<textarea rows="3" value={productForm.description} onChange={(event) => updateProductField('description', event.target.value)} /></label>
+              <label>Descrição<textarea rows="3" value={productForm.description} onChange={(e) => updateProductField('description', e.target.value)} /></label>
 
               <div className="admin-form-grid three">
-                <label>Preço varejo (R$)<input type="number" min="0" step="0.01" value={productForm.price} onChange={(event) => updateProductField('price', event.target.value)} required /></label>
-                <label>Preço promocional (R$)<input type="number" min="0" step="0.01" value={productForm.promotionalPrice} onChange={(event) => updateProductField('promotionalPrice', event.target.value)} /></label>
-                <label>Preço atacado (R$)<input type="number" min="0" step="0.01" disabled={productForm.wholesaleRuleMode === 'disabled'} value={productForm.wholesalePrice} onChange={(event) => updateProductField('wholesalePrice', event.target.value)} /></label>
+                <label>Preço varejo<input type="number" step="0.01" min="0" value={productForm.price} onChange={(e) => updateProductField('price', e.target.value)} required /></label>
+                <label>Preço promocional<input type="number" step="0.01" min="0" value={productForm.promotionalPrice} onChange={(e) => updateProductField('promotionalPrice', e.target.value)} /></label>
+                <label>Preço atacado<input type="number" step="0.01" min="0" value={productForm.wholesalePrice} onChange={(e) => updateProductField('wholesalePrice', e.target.value)} disabled={productForm.wholesaleRuleMode === 'disabled'} /></label>
               </div>
 
               <div className="admin-form-grid two">
-                <label>Regra de atacado<select value={productForm.wholesaleRuleMode} onChange={(event) => updateProductField('wholesaleRuleMode', event.target.value)}><option value="inherit">Usar regra geral da loja</option><option value="product">Regra específica deste produto</option><option value="disabled">Sem atacado</option></select></label>
-                <label>Quantidade mínima específica<input type="number" min="1" disabled={productForm.wholesaleRuleMode !== 'product'} value={productForm.wholesaleMinimumQuantity} onChange={(event) => updateProductField('wholesaleMinimumQuantity', event.target.value)} /></label>
+                <label>Regra de atacado<select value={productForm.wholesaleRuleMode} onChange={(e) => updateProductField('wholesaleRuleMode', e.target.value)}><option value="inherit">Usar regra geral</option><option value="product">Regra específica deste produto</option><option value="disabled">Sem atacado</option></select></label>
+                {productForm.wholesaleRuleMode === 'product' && <label>Mínimo específico<input type="number" min="1" value={productForm.wholesaleMinimumQuantity} onChange={(e) => updateProductField('wholesaleMinimumQuantity', e.target.value)} /></label>}
               </div>
 
-              <label>URL da imagem<input type="url" placeholder="https://..." value={productForm.imageUrl} onChange={(event) => updateProductField('imageUrl', event.target.value)} /><small>Nesta primeira versão usamos URL. Upload direto de foto será a próxima evolução.</small></label>
+              <div className="admin-form-grid two">
+                <label>URL da imagem principal<input type="url" value={productForm.imageUrl} onChange={(e) => updateProductField('imageUrl', e.target.value)} placeholder="https://..." /></label>
+                <label>URL da imagem do guia de medidas<input type="url" value={productForm.sizeGuideImageUrl} onChange={(e) => updateProductField('sizeGuideImageUrl', e.target.value)} placeholder="https://..." /></label>
+              </div>
 
-              <div className="admin-form-section">
-                <div><h3>Tamanhos e estoque</h3><p>Informe a referência e a quantidade disponível de cada tamanho.</p></div>
-                <div className="admin-size-editor">
-                  {productForm.sizes.map((size, index) => (
-                    <div key={size.label}>
-                      <strong>{size.label}</strong>
-                      <label>Referência<input value={size.reference} onChange={(event) => updateSize(index, 'reference', event.target.value)} /></label>
-                      <label>Estoque<input type="number" min="0" value={size.stock} onChange={(event) => updateSize(index, 'stock', event.target.value)} /></label>
-                    </div>
-                  ))}
+              <div className="admin-form-options">
+                <label><input type="checkbox" checked={productForm.active} onChange={(e) => updateProductField('active', e.target.checked)} />Produto ativo</label>
+                <label><input type="checkbox" checked={productForm.featured} onChange={(e) => updateProductField('featured', e.target.checked)} />Produto em destaque</label>
+              </div>
+
+              <div className="admin-variants-section">
+                <div className="admin-variants-heading">
+                  <div><p className="admin-eyebrow">VARIAÇÕES</p><h3>Cores, estampas e tamanhos</h3><p>Cada combinação de cor + estampa possui estoque próprio por tamanho.</p></div>
+                  <button className="admin-secondary-button" type="button" onClick={addVariant}><Plus size={16}/>Adicionar combinação</button>
                 </div>
-              </div>
 
-              <div className="admin-form-checks">
-                <label><input type="checkbox" checked={productForm.active} onChange={(event) => updateProductField('active', event.target.checked)} />Produto ativo na loja</label>
-                <label><input type="checkbox" checked={productForm.featured} onChange={(event) => updateProductField('featured', event.target.checked)} />Produto em destaque</label>
+                {productForm.variants.map((variant, index) => (
+                  <div className="admin-variant-editor" key={index}>
+                    <div className="admin-variant-editor-head">
+                      <strong>Combinação {index + 1}</strong>
+                      {productForm.variants.length > 1 && <button className="admin-danger-icon" type="button" onClick={() => removeVariant(index)} aria-label="Remover combinação"><Trash2 size={17}/></button>}
+                    </div>
+
+                    <div className="admin-form-grid three">
+                      <label>Cor<input value={variant.color} onChange={(e) => updateVariant(index, 'color', e.target.value)} placeholder="Ex.: Rosa" required /></label>
+                      <label>Estampa<input value={variant.printPattern} onChange={(e) => updateVariant(index, 'printPattern', e.target.value)} placeholder="Ex.: Floral, Lisa" required /></label>
+                      <label>Imagem desta combinação<input type="url" value={variant.imageUrl} onChange={(e) => updateVariant(index, 'imageUrl', e.target.value)} placeholder="https://..." /></label>
+                    </div>
+
+                    <div className="admin-stock-grid">
+                      {SIZE_LABELS.map((size) => (
+                        <label key={size}><span>{size}</span><input type="number" min="0" value={variant.stock[size]} onChange={(e) => updateVariantStock(index, size, e.target.value)} /></label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
 
               {productFormMessage && <p className="admin-message">{productFormMessage}</p>}
