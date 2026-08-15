@@ -11,6 +11,22 @@ function money(value) {
   return Number(value ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+function formatCurrencyInput(value) {
+  const digits = String(value ?? '').replace(/\D/g, '');
+  if (!digits) return '';
+  return (Number(digits) / 100).toLocaleString('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function parseCurrencyInput(value) {
+  const digits = String(value ?? '').replace(/\D/g, '');
+  return digits ? Number(digits) / 100 : null;
+}
+
 function slugify(value) {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
@@ -142,6 +158,10 @@ export default function AdminApp() {
     setProductForm((current) => ({ ...current, [field]: value }));
   }
 
+  function updateCurrencyField(field, value) {
+    updateProductField(field, formatCurrencyInput(value));
+  }
+
   function addVariant() {
     setProductForm((current) => ({ ...current, variants: [...current.variants, makeVariant()] }));
   }
@@ -209,12 +229,12 @@ export default function AdminApp() {
     event.preventDefault(); setProductFormMessage('');
     const name = productForm.name.trim();
     const slug = slugify(name);
-    const price = Number(productForm.price);
-    const promotionalPrice = productForm.promotionalPrice === '' ? null : Number(productForm.promotionalPrice);
-    const wholesalePrice = productForm.wholesalePrice === '' ? null : Number(productForm.wholesalePrice);
+    const price = parseCurrencyInput(productForm.price);
+    const promotionalPrice = parseCurrencyInput(productForm.promotionalPrice);
+    const wholesalePrice = parseCurrencyInput(productForm.wholesalePrice);
     const wholesaleMinimum = productForm.wholesaleRuleMode === 'product' ? Number(productForm.wholesaleMinimumQuantity) : null;
 
-    if (!name || !slug || Number.isNaN(price) || price < 0) { setProductFormMessage('Preencha o nome e o preço de varejo corretamente.'); return; }
+    if (!name || !slug || price === null || Number.isNaN(price) || price < 0) { setProductFormMessage('Preencha o nome e o preço de varejo corretamente.'); return; }
     if (!productForm.category) { setProductFormMessage('Selecione uma categoria.'); return; }
     if (productForm.wholesaleRuleMode !== 'disabled' && (wholesalePrice === null || Number.isNaN(wholesalePrice))) { setProductFormMessage('Informe o preço de atacado ou escolha “Sem atacado”.'); return; }
     if (productForm.wholesaleRuleMode === 'product' && (!wholesaleMinimum || wholesaleMinimum < 1)) { setProductFormMessage('Informe a quantidade mínima da regra específica.'); return; }
@@ -351,9 +371,9 @@ export default function AdminApp() {
 
           <label>Descrição<textarea rows="3" value={productForm.description} onChange={(e) => updateProductField('description', e.target.value)}/></label>
           <div className="admin-form-grid three">
-            <label>Preço varejo<input type="number" step="0.01" min="0" value={productForm.price} onChange={(e) => updateProductField('price', e.target.value)} required/></label>
-            <label>Preço promocional<input type="number" step="0.01" min="0" value={productForm.promotionalPrice} onChange={(e) => updateProductField('promotionalPrice', e.target.value)}/></label>
-            <label>Preço atacado<input type="number" step="0.01" min="0" value={productForm.wholesalePrice} onChange={(e) => updateProductField('wholesalePrice', e.target.value)} disabled={productForm.wholesaleRuleMode === 'disabled'}/></label>
+            <label>Preço varejo<input type="text" inputMode="numeric" value={productForm.price} onChange={(e) => updateCurrencyField('price', e.target.value)} placeholder="R$ 0,00" required/></label>
+            <label>Preço promocional<input type="text" inputMode="numeric" value={productForm.promotionalPrice} onChange={(e) => updateCurrencyField('promotionalPrice', e.target.value)} placeholder="R$ 0,00"/></label>
+            <label>Preço atacado<input type="text" inputMode="numeric" value={productForm.wholesalePrice} onChange={(e) => updateCurrencyField('wholesalePrice', e.target.value)} placeholder="R$ 0,00" disabled={productForm.wholesaleRuleMode === 'disabled'}/></label>
           </div>
           <div className="admin-form-grid two">
             <label>Regra de atacado<select value={productForm.wholesaleRuleMode} onChange={(e) => updateProductField('wholesaleRuleMode', e.target.value)}><option value="inherit">Usar regra geral</option><option value="product">Regra específica deste produto</option><option value="disabled">Sem atacado</option></select></label>
