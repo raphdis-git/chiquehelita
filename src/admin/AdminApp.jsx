@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 import './admin.css';
 
 const SIZE_LABELS = ['PP', 'P', 'M', 'G', 'GG'];
+const OPTION_LABELS = { category: 'categoria', color: 'cor', print: 'estampa' };
 
 function money(value) {
   return Number(value ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -15,8 +16,12 @@ function slugify(value) {
 }
 
 function uniqueSorted(values) {
-  return [...new Set(values.map((value) => String(value ?? '').trim()).filter(Boolean))]
-    .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const map = new Map();
+  values.map((value) => String(value ?? '').trim()).filter(Boolean).forEach((value) => {
+    const key = value.toLocaleLowerCase('pt-BR');
+    if (!map.has(key)) map.set(key, value);
+  });
+  return [...map.values()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
 }
 
 function wholesaleLabel(product, generalMinimum) {
@@ -26,12 +31,7 @@ function wholesaleLabel(product, generalMinimum) {
 }
 
 function makeVariant() {
-  return {
-    color: '',
-    printPattern: '',
-    imageUrl: '',
-    stock: Object.fromEntries(SIZE_LABELS.map((size) => [size, 0])),
-  };
+  return { color: '', printPattern: '', imageUrl: '', stock: Object.fromEntries(SIZE_LABELS.map((size) => [size, 0])) };
 }
 
 function emptyProductForm() {
@@ -52,10 +52,15 @@ export default function AdminApp() {
   const [message, setMessage] = useState('');
   const [products, setProducts] = useState([]);
   const [settings, setSettings] = useState(null);
+  const [catalogOptions, setCatalogOptions] = useState([]);
   const [productFormOpen, setProductFormOpen] = useState(false);
   const [productSaving, setProductSaving] = useState(false);
   const [productFormMessage, setProductFormMessage] = useState('');
   const [productForm, setProductForm] = useState(emptyProductForm);
+  const [optionModal, setOptionModal] = useState(null);
+  const [newOptionName, setNewOptionName] = useState('');
+  const [optionSaving, setOptionSaving] = useState(false);
+  const [optionMessage, setOptionMessage] = useState('');
 
   useEffect(() => {
     checkSession();
@@ -65,7 +70,7 @@ export default function AdminApp() {
 
   async function loadDashboard() {
     setDashboardLoading(true);
-    const [productsResult, settingsResult] = await Promise.all([
+    const [productsResult, settingsResult, optionsResult] = await Promise.all([
       supabase.from('products').select(`
         id, slug, name, category, price, promotional_price, wholesale_price,
         wholesale_rule_mode, wholesale_minimum_quantity, image_url, size_guide_image_url,
@@ -76,9 +81,10 @@ export default function AdminApp() {
         )
       `).order('created_at', { ascending: false }),
       supabase.from('store_settings').select('store_name, minimum_wholesale_quantity, primary_color, session_timeout_minutes').limit(1).maybeSingle(),
+      supabase.from('catalog_options').select('id, option_type, name, active').eq('active', true).order('name'),
     ]);
 
-    if (productsResult.error || settingsResult.error) {
+    if (productsResult.error || settingsResult.error || optionsResult.error) {
       setMessage('Não foi possível carregar os dados do painel.');
       setDashboardLoading(false);
       return;
@@ -96,15 +102,14 @@ export default function AdminApp() {
 
     setProducts(normalized);
     setSettings(settingsResult.data ?? null);
+    setCatalogOptions(optionsResult.data ?? []);
     setDashboardLoading(false);
   }
 
   async function checkSession() {
     setLoading(true);
     const { data: { session: currentSession } } = await supabase.auth.getSession();
-    if (!currentSession) {
-      setSession(null); setIsAdmin(false); setLoading(false); return;
-    }
+    if (!currentSession) { setSession(null); setIsAdmin(false); setLoading(false); return; }
 
     const { data: adminRecord, error } = await supabase.from('admin_users')
       .select('user_id, full_name, active').eq('user_id', currentSession.user.id).eq('active', true).maybeSingle();
@@ -126,7 +131,7 @@ export default function AdminApp() {
 
   async function handleLogout() {
     await supabase.auth.signOut();
-    setSession(null); setIsAdmin(false); setProducts([]); setSettings(null);
+    setSession(null); setIsAdmin(false); setProducts([]); setSettings(null); setCatalogOptions([]);
   }
 
   function openNewProduct() {
@@ -159,6 +164,47 @@ export default function AdminApp() {
     }));
   }
 
+  function openOptionModal(type, variantIndex = null) {
+    setOptionModal({ type, variantIndex });
+    setNewOptionName('');
+    setOptionMessage('');
+  }
+
+  function closeOptionModal() {
+    if (optionSaving) return;
+    setOptionModal(null);
+    setNewOptionName('');
+    setOptionMessage('');
+  }
+
+  async function handleAddOption(event) {
+    event.preventDefault();
+    if (!optionModal) return;
+    const name = newOptionName.trim();
+    if (!name) { setOptionMessage(`Informe o nome da ${OPTION_LABELS[optionModal.type]}.`); return; }
+
+    const exists = catalogOptions.some((item) => item.option_type === optionModal.type && item.name.toLocaleLowerCase('pt-BR') === name.toLocaleLowerCase('pt-BR'));
+    if (exists) { setOptionMessage(`Esta ${OPTION_LABELS[optionModal.type]} já está cadastrada.`); return; }
+
+    setOptionSaving(true);
+    const { data, error } = await supabase.from('catalog_options')
+      .insert({ option_type: optionModal.type, name, active: true })
+      .select('id, option_type, name, active').single();
+
+    if (error || !data) {
+      setOptionMessage(error?.code === '23505' ? 'Esta opção já existe.' : 'Não foi possível adicionar a opção.');
+      setOptionSaving(false);
+      return;
+    }
+
+    setCatalogOptions((current) => [...current, data]);
+    if (optionModal.type === 'category') updateProductField('category', data.name);
+    if (optionModal.type === 'color') updateVariant(optionModal.variantIndex, 'color', data.name);
+    if (optionModal.type === 'print') updateVariant(optionModal.variantIndex, 'printPattern', data.name);
+    setOptionSaving(false);
+    closeOptionModal();
+  }
+
   async function handleCreateProduct(event) {
     event.preventDefault(); setProductFormMessage('');
     const name = productForm.name.trim();
@@ -169,18 +215,19 @@ export default function AdminApp() {
     const wholesaleMinimum = productForm.wholesaleRuleMode === 'product' ? Number(productForm.wholesaleMinimumQuantity) : null;
 
     if (!name || !slug || Number.isNaN(price) || price < 0) { setProductFormMessage('Preencha o nome e o preço de varejo corretamente.'); return; }
+    if (!productForm.category) { setProductFormMessage('Selecione uma categoria.'); return; }
     if (productForm.wholesaleRuleMode !== 'disabled' && (wholesalePrice === null || Number.isNaN(wholesalePrice))) { setProductFormMessage('Informe o preço de atacado ou escolha “Sem atacado”.'); return; }
     if (productForm.wholesaleRuleMode === 'product' && (!wholesaleMinimum || wholesaleMinimum < 1)) { setProductFormMessage('Informe a quantidade mínima da regra específica.'); return; }
     if (productForm.variants.length === 0) { setProductFormMessage('Cadastre pelo menos uma combinação de cor e estampa.'); return; }
 
     const normalizedVariants = productForm.variants.map((variant) => ({ ...variant, color: variant.color.trim(), printPattern: variant.printPattern.trim() }));
-    if (normalizedVariants.some((variant) => !variant.color || !variant.printPattern)) { setProductFormMessage('Preencha cor e estampa em todas as combinações.'); return; }
+    if (normalizedVariants.some((variant) => !variant.color || !variant.printPattern)) { setProductFormMessage('Selecione cor e estampa em todas as combinações.'); return; }
     const keys = normalizedVariants.map((variant) => `${variant.color.toLowerCase()}::${variant.printPattern.toLowerCase()}`);
     if (new Set(keys).size !== keys.length) { setProductFormMessage('Existem combinações repetidas de cor e estampa.'); return; }
 
     setProductSaving(true);
     const { data: createdProduct, error: productError } = await supabase.from('products').insert({
-      slug, name, category: productForm.category.trim() || 'Vestidos', description: productForm.description.trim() || null,
+      slug, name, category: productForm.category, description: productForm.description.trim() || null,
       price, promotional_price: promotionalPrice, wholesale_price: productForm.wholesaleRuleMode === 'disabled' ? null : wholesalePrice,
       wholesale_rule_mode: productForm.wholesaleRuleMode, wholesale_minimum_quantity: wholesaleMinimum,
       image_url: productForm.imageUrl.trim() || null, size_guide_image_url: productForm.sizeGuideImageUrl.trim() || null,
@@ -218,14 +265,14 @@ export default function AdminApp() {
   }
 
   const optionLists = useMemo(() => {
-    const categories = uniqueSorted(['Vestidos', ...products.map((product) => product.category)]);
+    const fromCatalog = (type) => catalogOptions.filter((item) => item.option_type === type && item.active).map((item) => item.name);
     const variants = products.flatMap((product) => product.product_variants ?? []);
     return {
-      categories,
-      colors: uniqueSorted(variants.map((variant) => variant.color)),
-      prints: uniqueSorted(variants.map((variant) => variant.print_pattern)),
+      categories: uniqueSorted(['Vestidos', ...fromCatalog('category'), ...products.map((product) => product.category)]),
+      colors: uniqueSorted([...fromCatalog('color'), ...variants.map((variant) => variant.color)]),
+      prints: uniqueSorted([...fromCatalog('print'), ...variants.map((variant) => variant.print_pattern)]),
     };
-  }, [products]);
+  }, [catalogOptions, products]);
 
   const metrics = useMemo(() => {
     const totalStock = products.reduce((sum, product) => sum + product.product_variants.reduce(
@@ -249,6 +296,10 @@ export default function AdminApp() {
   }
 
   const generalMinimum = settings?.minimum_wholesale_quantity ?? 6;
+
+  const SelectWithAdd = ({ label, value, onChange, options, type, variantIndex = null, required = false }) => (
+    <label>{label}<div className="admin-select-add"><select value={value} onChange={(e) => onChange(e.target.value)} required={required}><option value="">Selecione...</option>{options.map((item) => <option key={item} value={item}>{item}</option>)}</select><button type="button" className="admin-add-option-button" onClick={() => openOptionModal(type, variantIndex)} aria-label={`Adicionar ${OPTION_LABELS[type]}`} title={`Adicionar ${OPTION_LABELS[type]}`}><Plus size={18}/></button></div></label>
+  );
 
   return <main className="admin-dashboard">
     <header className="admin-dashboard-header">
@@ -295,7 +346,7 @@ export default function AdminApp() {
         <form className="admin-product-form" onSubmit={handleCreateProduct}>
           <div className="admin-form-grid two">
             <label>Nome do produto<input value={productForm.name} onChange={(e) => updateProductField('name', e.target.value)} required/></label>
-            <label>Categoria<input list="admin-category-options" value={productForm.category} onChange={(e) => updateProductField('category', e.target.value)} placeholder="Selecione ou digite uma nova"/><datalist id="admin-category-options">{optionLists.categories.map((item) => <option value={item} key={item}/>)}</datalist><small className="admin-field-help">Escolha uma opção existente ou digite uma nova categoria.</small></label>
+            <SelectWithAdd label="Categoria" value={productForm.category} onChange={(value) => updateProductField('category', value)} options={optionLists.categories} type="category" required/>
           </div>
 
           <label>Descrição<textarea rows="3" value={productForm.description} onChange={(e) => updateProductField('description', e.target.value)}/></label>
@@ -315,14 +366,12 @@ export default function AdminApp() {
           <div className="admin-form-options"><label><input type="checkbox" checked={productForm.active} onChange={(e) => updateProductField('active', e.target.checked)}/>Produto ativo</label><label><input type="checkbox" checked={productForm.featured} onChange={(e) => updateProductField('featured', e.target.checked)}/>Produto em destaque</label></div>
 
           <div className="admin-variants-section">
-            <div className="admin-variants-heading"><div><p className="admin-eyebrow">VARIAÇÕES</p><h3>Cores, estampas e tamanhos</h3><p>Escolha opções já usadas ou digite uma nova cor/estampa quando necessário.</p></div><button className="admin-secondary-button" type="button" onClick={addVariant}><Plus size={16}/>Adicionar combinação</button></div>
-            <datalist id="admin-color-options">{optionLists.colors.map((item) => <option value={item} key={item}/>)}</datalist>
-            <datalist id="admin-print-options">{optionLists.prints.map((item) => <option value={item} key={item}/>)}</datalist>
+            <div className="admin-variants-heading"><div><p className="admin-eyebrow">VARIAÇÕES</p><h3>Cores, estampas e tamanhos</h3><p>Escolha uma opção da lista. Para cadastrar uma nova, use o botão +.</p></div><button className="admin-secondary-button" type="button" onClick={addVariant}><Plus size={16}/>Adicionar combinação</button></div>
             {productForm.variants.map((variant, index) => <div className="admin-variant-editor" key={index}>
               <div className="admin-variant-editor-head"><strong>Combinação {index + 1}</strong>{productForm.variants.length > 1 && <button className="admin-danger-icon" type="button" onClick={() => removeVariant(index)} aria-label="Remover combinação"><Trash2 size={17}/></button>}</div>
               <div className="admin-form-grid three">
-                <label>Cor<input list="admin-color-options" value={variant.color} onChange={(e) => updateVariant(index, 'color', e.target.value)} placeholder="Selecione ou digite uma nova" required/><small className="admin-field-help">Pode reutilizar uma cor existente ou cadastrar outra.</small></label>
-                <label>Estampa<input list="admin-print-options" value={variant.printPattern} onChange={(e) => updateVariant(index, 'printPattern', e.target.value)} placeholder="Selecione ou digite uma nova" required/><small className="admin-field-help">Ex.: Lisa, Floral, Poá. Se não existir, basta digitar.</small></label>
+                <SelectWithAdd label="Cor" value={variant.color} onChange={(value) => updateVariant(index, 'color', value)} options={optionLists.colors} type="color" variantIndex={index} required/>
+                <SelectWithAdd label="Estampa" value={variant.printPattern} onChange={(value) => updateVariant(index, 'printPattern', value)} options={optionLists.prints} type="print" variantIndex={index} required/>
                 <label>Imagem desta combinação<input type="url" value={variant.imageUrl} onChange={(e) => updateVariant(index, 'imageUrl', e.target.value)} placeholder="https://..."/></label>
               </div>
               <div className="admin-stock-grid">{SIZE_LABELS.map((size) => <label key={size}><span>{size}</span><input type="number" min="0" value={variant.stock[size]} onChange={(e) => updateVariantStock(index, size, e.target.value)}/></label>)}</div>
@@ -331,6 +380,17 @@ export default function AdminApp() {
 
           {productFormMessage && <p className="admin-message">{productFormMessage}</p>}
           <div className="admin-form-actions"><button type="button" className="admin-secondary-button" onClick={() => setProductFormOpen(false)} disabled={productSaving}>Cancelar</button><button type="submit" className="admin-primary-button" disabled={productSaving}>{productSaving ? 'Salvando...' : 'Cadastrar produto'}</button></div>
+        </form>
+      </section>
+    </div>}
+
+    {optionModal && <div className="admin-option-modal-backdrop" onClick={closeOptionModal}>
+      <section className="admin-option-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="admin-option-modal-head"><div><p className="admin-eyebrow">NOVA OPÇÃO</p><h3>Adicionar {OPTION_LABELS[optionModal.type]}</h3></div><button type="button" className="admin-icon-button" onClick={closeOptionModal} disabled={optionSaving}><X size={18}/></button></div>
+        <form onSubmit={handleAddOption}>
+          <label>Nome da {OPTION_LABELS[optionModal.type]}<input autoFocus value={newOptionName} onChange={(e) => setNewOptionName(e.target.value)} placeholder={`Ex.: ${optionModal.type === 'category' ? 'Conjuntos' : optionModal.type === 'color' ? 'Verde Oliva' : 'Floral'}`} required/></label>
+          {optionMessage && <p className="admin-message">{optionMessage}</p>}
+          <div className="admin-form-actions"><button type="button" className="admin-secondary-button" onClick={closeOptionModal} disabled={optionSaving}>Cancelar</button><button type="submit" className="admin-primary-button" disabled={optionSaving}>{optionSaving ? 'Adicionando...' : 'Adicionar'}</button></div>
         </form>
       </section>
     </div>}
