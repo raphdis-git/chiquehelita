@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Search, ShoppingBag, Menu, X, Plus, Minus, MessageCircle, Truck, ShieldCheck, Heart } from 'lucide-react';
+import { Search, ShoppingBag, Menu, X, Plus, Minus, MessageCircle, Truck, ShieldCheck, Heart, Sparkles } from 'lucide-react';
 import logo from './assets/Logo.png';
 import ProductGallery from './ProductGallery';
 import { supabase } from './lib/supabase';
@@ -67,6 +67,10 @@ function firstSelection(product) {
   return { color: variant.color, printPattern: variant.printPattern, variantId: variant.id, size };
 }
 
+function launchImage(product) {
+  return product.variants.flatMap((variant) => variant.images ?? []).find(Boolean) || product.image;
+}
+
 export default function StoreApp() {
   const [products, setProducts] = useState([]);
   const [settings, setSettings] = useState({ minimumWholesaleQuantity: 6, whatsapp: '556285166201' });
@@ -110,10 +114,10 @@ export default function StoreApp() {
     setStoreLoading(false);
   }
 
-  const featuredProduct = products.find((item) => item.featured) ?? products[0];
   const cartLines = useMemo(() => getCartLines(products, cart), [products, cart]);
   const cartSummary = useMemo(() => getCartSummary(products, cart, settings.minimumWholesaleQuantity), [products, cart, settings.minimumWholesaleQuantity]);
   const summaryByProduct = Object.fromEntries(cartSummary.items.map((item) => [item.productId, item]));
+  const launches = products.slice(0, 6);
 
   function selectVariant(product, variantId) {
     const variant = product.variants.find((item) => item.id === variantId);
@@ -172,7 +176,7 @@ export default function StoreApp() {
 
   if (storeLoading) return <main className="empty-store"><h1>CHIQUEHELITA</h1><p>Carregando coleção...</p></main>;
   if (storeError) return <main className="empty-store"><h1>CHIQUEHELITA</h1><p>{storeError}</p></main>;
-  if (!featuredProduct) return <main className="empty-store"><h1>CHIQUEHELITA</h1><p>Novidades chegando em breve.</p></main>;
+  if (!products.length) return <main className="empty-store"><h1>CHIQUEHELITA</h1><p>Novidades chegando em breve.</p></main>;
 
   return <div className="app">
     <header className="header">
@@ -183,12 +187,43 @@ export default function StoreApp() {
     </header>
 
     <main>
-      <section id="inicio" className="hero">
-        <div className="hero-copy"><p className="eyebrow">MODA FEMININA</p><h1>Elegância que<br/><em>veste você.</em></h1><p className="hero-text">Vestidos femininos escolhidos para valorizar sua beleza, com conforto e personalidade.</p><a className="button" href="#catalogo">Ver coleção</a></div>
-        <div className="hero-art">{featuredProduct.image ? <img src={featuredProduct.image} alt={`${featuredProduct.name} CHIQUEHELITA`}/> : <div className="product-placeholder">CHIQUEHELITA</div>}<div className="hero-tag">{featuredProduct.name.toUpperCase()}<br/><small>{money(retailPrice(featuredProduct))}</small></div></div>
+      <section id="inicio" className="hero hero-brand">
+        <div className="hero-copy">
+          <p className="eyebrow">MODA FEMININA</p>
+          <h1>Elegância que<br/><em>veste você.</em></h1>
+          <p className="hero-text">Vestidos femininos escolhidos para valorizar sua beleza, com conforto e personalidade.</p>
+          <div className="hero-actions"><a className="button" href="#catalogo">Ver coleção</a><a className="button secondary" href="#catalogo">Comprar no atacado</a></div>
+          <div className="hero-mini-benefits">
+            <div><ShieldCheck size={19}/><span><strong>Compra segura</strong><small>Seu pedido protegido</small></span></div>
+            <div><MessageCircle size={19}/><span><strong>Atendimento personalizado</strong><small>Fale conosco pelo WhatsApp</small></span></div>
+            <div><Heart size={19}/><span><strong>Moda feminina</strong><small>Escolhas feitas para você</small></span></div>
+          </div>
+        </div>
+        <div className="hero-brand-art" aria-hidden="true">
+          <img src={logo} alt=""/>
+          <div className="hero-brand-caption"><span>MODA FEMININA</span><strong>VAREJO &amp; ATACADO</strong><i>♥</i></div>
+        </div>
       </section>
 
-      <section className="benefits"><div><ShieldCheck size={22}/><strong>Compra segura</strong><span>Seu pedido protegido</span></div><div><Truck size={22}/><strong>Atendimento personalizado</strong><span>Fale conosco pelo WhatsApp</span></div><div><Heart size={22}/><strong>Moda feminina</strong><span>Escolhas feitas para você</span></div></section>
+      <section className="benefits benefits-wide">
+        <div><ShieldCheck size={22}/><strong>Compra segura</strong><span>Seu pedido protegido</span></div>
+        <div><Truck size={22}/><strong>Atendimento para todo o Brasil</strong><span>Consulte condições pelo WhatsApp</span></div>
+        <div><MessageCircle size={22}/><strong>Atendimento personalizado</strong><span>Fale diretamente com a loja</span></div>
+        <div><Sparkles size={22}/><strong>Varejo &amp; atacado</strong><span>Regras de preço aplicadas no carrinho</span></div>
+      </section>
+
+      <section className="launches-section" aria-labelledby="launches-title">
+        <div className="launches-heading"><p className="eyebrow">LANÇAMENTOS</p><h2 id="launches-title">Novidades para <em>você</em></h2><span>♥</span></div>
+        <div className="launches-row">
+          {launches.map((product, index) => {
+            const image = launchImage(product);
+            return <a className="launch-card" key={product.id} href="#catalogo" aria-label={`Ver ${product.name}`}>
+              <div className="launch-card-image">{image ? <img src={image} alt={product.name}/> : <div className="product-placeholder">CHIQUEHELITA</div>}{index === 0 && <b>Novo</b>}</div>
+              <div className="launch-card-info"><span>{product.category}</span><strong>{product.name}</strong><small>{money(retailPrice(product))}</small></div>
+            </a>;
+          })}
+        </div>
+      </section>
 
       <section id="catalogo" className="products-section">
         <div className="section-head"><div><p className="eyebrow">NOSSA COLEÇÃO</p><h2>Peças em destaque</h2><p>Navegue por todas as fotos e escolha cor, estampa e tamanho. Ao tocar em uma foto, a variação correspondente é selecionada automaticamente.</p></div><a href="#catalogo">Ver todos →</a></div>
