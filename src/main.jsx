@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import StoreApp from './StoreApp';
 import AdminApp from './admin/AdminApp';
 import './styles.css';
+import './gallery.css';
 
 const isAdminRoute = /\/admin\/?$/.test(window.location.pathname);
 
