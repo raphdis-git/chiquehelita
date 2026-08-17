@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Heart } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Heart, X, ZoomIn, ZoomOut } from 'lucide-react';
 
 export default function ProductGallery({ product, selectedVariantId, onSelectVariant }) {
   const gallery = useMemo(() => {
@@ -17,12 +17,29 @@ export default function ProductGallery({ product, selectedVariantId, onSelectVar
   }, [product]);
 
   const [activeIndex, setActiveIndex] = useState(0);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [zoom, setZoom] = useState(1);
 
   useEffect(() => {
     const selectedIndex = gallery.findIndex((item) => item.variantId === selectedVariantId);
     if (selectedIndex >= 0) setActiveIndex(selectedIndex);
     else if (activeIndex >= gallery.length) setActiveIndex(0);
   }, [selectedVariantId, gallery.length]);
+
+  useEffect(() => {
+    if (!lightboxOpen) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setLightboxOpen(false);
+      if (event.key === 'ArrowLeft') move(-1);
+      if (event.key === 'ArrowRight') move(1);
+    };
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = '';
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [lightboxOpen, activeIndex, gallery.length]);
 
   if (!gallery.length) {
     return <div className="product-image"><div className="product-placeholder">Sem imagem</div>{product.featured && <span className="badge">Destaque</span>}<button className="heart-button" aria-label="Favoritar"><Heart size={19}/></button></div>;
@@ -34,6 +51,7 @@ export default function ProductGallery({ product, selectedVariantId, onSelectVar
     const item = gallery[index];
     if (!item) return;
     setActiveIndex(index);
+    setZoom(1);
     if (item.variantId) onSelectVariant(item.variantId);
   }
 
@@ -41,9 +59,25 @@ export default function ProductGallery({ product, selectedVariantId, onSelectVar
     choose((activeIndex + delta + gallery.length) % gallery.length);
   }
 
+  function openLightbox() {
+    setZoom(1);
+    setLightboxOpen(true);
+  }
+
+  function closeLightbox() {
+    setZoom(1);
+    setLightboxOpen(false);
+  }
+
+  function toggleZoom() {
+    setZoom((current) => current > 1 ? 1 : 2);
+  }
+
   return <div className="product-gallery">
     <div className="product-image">
-      <img src={active.url} alt={`${product.name}${active.color ? ` - ${active.color} ${active.printPattern}` : ''}`}/>
+      <button type="button" className="gallery-main-image-button" onClick={openLightbox} aria-label={`Ampliar foto de ${product.name}`}>
+        <img src={active.url} alt={`${product.name}${active.color ? ` - ${active.color} ${active.printPattern}` : ''}`}/>
+      </button>
       {product.featured && <span className="badge">Destaque</span>}
       <button className="heart-button" aria-label="Favoritar"><Heart size={19}/></button>
       {gallery.length > 1 && <>
@@ -57,6 +91,26 @@ export default function ProductGallery({ product, selectedVariantId, onSelectVar
         <img src={item.url} alt={`${item.color} ${item.printPattern}`.trim() || product.name}/>
         {item.color && <span>{item.color}</span>}
       </button>)}
+    </div>}
+
+    {lightboxOpen && <div className="gallery-lightbox" role="dialog" aria-modal="true" aria-label={`Foto ampliada de ${product.name}`} onClick={closeLightbox}>
+      <div className="gallery-lightbox-content" onClick={(event) => event.stopPropagation()}>
+        <button type="button" className="gallery-lightbox-close" onClick={closeLightbox} aria-label="Fechar imagem ampliada"><X size={22}/></button>
+        <button type="button" className="gallery-lightbox-zoom" onClick={toggleZoom} aria-label={zoom > 1 ? 'Reduzir zoom' : 'Ampliar zoom'}>
+          {zoom > 1 ? <ZoomOut size={20}/> : <ZoomIn size={20}/>}
+        </button>
+        {gallery.length > 1 && <>
+          <button type="button" className="gallery-lightbox-arrow previous" onClick={() => move(-1)} aria-label="Foto anterior"><ChevronLeft size={26}/></button>
+          <button type="button" className="gallery-lightbox-arrow next" onClick={() => move(1)} aria-label="Próxima foto"><ChevronRight size={26}/></button>
+        </>}
+        <div className={`gallery-lightbox-image-wrap ${zoom > 1 ? 'zoomed' : ''}`} onClick={toggleZoom}>
+          <img src={active.url} alt={`${product.name}${active.color ? ` - ${active.color} ${active.printPattern}` : ''}`} style={{ transform: `scale(${zoom})` }}/>
+        </div>
+        <div className="gallery-lightbox-footer">
+          <span>{active.color}{active.printPattern ? ` · ${active.printPattern}` : ''}</span>
+          <strong>{activeIndex + 1} / {gallery.length}</strong>
+        </div>
+      </div>
     </div>}
   </div>;
 }
