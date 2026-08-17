@@ -1,279 +1,37 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Search, ShoppingBag, Menu, X, Plus, Minus, MessageCircle, Truck, ShieldCheck, Heart, Sparkles } from 'lucide-react';
+import { Search, ShoppingBag, Menu, X, Plus, Minus, MessageCircle, Truck, ShieldCheck, Sparkles } from 'lucide-react';
 import logo from './assets/Logo.png';
 import ProductGallery from './ProductGallery';
 import { supabase } from './lib/supabase';
 import { getCartLines, getCartSummary, makeCartKey } from './data/cart';
 
 const BASE = import.meta.env.BASE_URL;
+function money(value){return Number(value??0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});}
+function uniqueImages(values){return [...new Set(values.filter(Boolean))];}
+function normalizeProduct(product){const variants=(product.product_variants??[]).filter(v=>v.active).sort((a,b)=>a.sort_order-b.sort_order).map(v=>{const gallery=[...(v.product_variant_images??[])].sort((a,b)=>a.sort_order-b.sort_order);const primary=gallery.find(i=>i.is_primary)?.image_url||v.image_url||gallery[0]?.image_url||null;return{id:v.id,color:v.color,printPattern:v.print_pattern,image:primary,images:uniqueImages([primary,...gallery.map(i=>i.image_url),v.image_url]),sizes:[...(v.product_variant_stock??[])].sort((a,b)=>a.sort_order-b.sort_order).map(s=>({id:s.id,label:s.size,stock:s.stock}))};});return{id:product.id,slug:product.slug,name:product.name,category:product.category,description:product.description,price:Number(product.price),promotionalPrice:product.promotional_price===null?null:Number(product.promotional_price),wholesalePrice:product.wholesale_price===null?null:Number(product.wholesale_price),wholesaleRuleMode:product.wholesale_rule_mode,wholesaleMinimumQuantity:product.wholesale_minimum_quantity,image:product.image_url||(product.slug==='vestido-alice'?`${BASE}assets/vestido-alice.svg`:null),sizeGuideImage:product.size_guide_image_url,featured:product.featured,variants};}
+function totalStock(p){return p.variants.reduce((t,v)=>t+v.sizes.reduce((s,z)=>s+z.stock,0),0)}
+function retailPrice(p){return p.promotionalPrice??p.price}
+function firstSelection(p){const v=p.variants.find(i=>i.sizes.some(s=>s.stock>0))??p.variants[0];if(!v)return{color:'',printPattern:'',variantId:'',size:''};const size=v.sizes.find(i=>i.stock>0)?.label??v.sizes[0]?.label??'';return{color:v.color,printPattern:v.printPattern,variantId:v.id,size}}
+function launchImage(p){return p.variants.flatMap(v=>v.images??[]).find(Boolean)||p.image}
 
-function money(value) {
-  return Number(value ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
-
-function uniqueImages(values) {
-  return [...new Set(values.filter(Boolean))];
-}
-
-function normalizeProduct(product) {
-  const variants = (product.product_variants ?? [])
-    .filter((variant) => variant.active)
-    .sort((a, b) => a.sort_order - b.sort_order)
-    .map((variant) => {
-      const galleryRecords = [...(variant.product_variant_images ?? [])].sort((a, b) => a.sort_order - b.sort_order);
-      const primaryImage = galleryRecords.find((image) => image.is_primary)?.image_url || variant.image_url || galleryRecords[0]?.image_url || null;
-      return {
-        id: variant.id,
-        color: variant.color,
-        printPattern: variant.print_pattern,
-        image: primaryImage,
-        images: uniqueImages([primaryImage, ...galleryRecords.map((image) => image.image_url), variant.image_url]),
-        sizes: [...(variant.product_variant_stock ?? [])]
-          .sort((a, b) => a.sort_order - b.sort_order)
-          .map((size) => ({ id: size.id, label: size.size, stock: size.stock })),
-      };
-    });
-
-  return {
-    id: product.id,
-    slug: product.slug,
-    name: product.name,
-    category: product.category,
-    description: product.description,
-    price: Number(product.price),
-    promotionalPrice: product.promotional_price === null ? null : Number(product.promotional_price),
-    wholesalePrice: product.wholesale_price === null ? null : Number(product.wholesale_price),
-    wholesaleRuleMode: product.wholesale_rule_mode,
-    wholesaleMinimumQuantity: product.wholesale_minimum_quantity,
-    image: product.image_url || (product.slug === 'vestido-alice' ? `${BASE}assets/vestido-alice.svg` : null),
-    sizeGuideImage: product.size_guide_image_url,
-    featured: product.featured,
-    variants,
-  };
-}
-
-function totalStock(product) {
-  return product.variants.reduce((total, variant) => total + variant.sizes.reduce((sum, size) => sum + size.stock, 0), 0);
-}
-
-function retailPrice(product) {
-  return product.promotionalPrice ?? product.price;
-}
-
-function firstSelection(product) {
-  const variant = product.variants.find((item) => item.sizes.some((size) => size.stock > 0)) ?? product.variants[0];
-  if (!variant) return { color: '', printPattern: '', variantId: '', size: '' };
-  const size = variant.sizes.find((item) => item.stock > 0)?.label ?? variant.sizes[0]?.label ?? '';
-  return { color: variant.color, printPattern: variant.printPattern, variantId: variant.id, size };
-}
-
-function launchImage(product) {
-  return product.variants.flatMap((variant) => variant.images ?? []).find(Boolean) || product.image;
-}
-
-export default function StoreApp() {
-  const [products, setProducts] = useState([]);
-  const [settings, setSettings] = useState({ minimumWholesaleQuantity: 6, whatsapp: '556285166201' });
-  const [storeLoading, setStoreLoading] = useState(true);
-  const [storeError, setStoreError] = useState('');
-  const [cartOpen, setCartOpen] = useState(false);
-  const [cart, setCart] = useState({});
-  const [selections, setSelections] = useState({});
-
-  useEffect(() => { loadStore(); }, []);
-
-  async function loadStore() {
-    setStoreLoading(true);
-    const [productsResult, settingsResult] = await Promise.all([
-      supabase.from('products').select(`
-        id, slug, name, category, description, price, promotional_price,
-        wholesale_price, wholesale_rule_mode, wholesale_minimum_quantity,
-        image_url, size_guide_image_url, featured,
-        product_variants (
-          id, color, print_pattern, image_url, active, sort_order,
-          product_variant_stock (id, size, stock, sort_order),
-          product_variant_images (id, image_url, sort_order, is_primary)
-        )
-      `).order('created_at', { ascending: false }),
-      supabase.from('store_settings').select('minimum_wholesale_quantity, whatsapp').limit(1).maybeSingle(),
-    ]);
-
-    if (productsResult.error || settingsResult.error) {
-      setStoreError('Não foi possível carregar o catálogo agora.');
-      setStoreLoading(false);
-      return;
-    }
-
-    const normalized = (productsResult.data ?? []).map(normalizeProduct);
-    setProducts(normalized);
-    setSettings({
-      minimumWholesaleQuantity: settingsResult.data?.minimum_wholesale_quantity ?? 6,
-      whatsapp: settingsResult.data?.whatsapp ?? '556285166201',
-    });
-    setSelections(Object.fromEntries(normalized.map((product) => [product.id, firstSelection(product)])));
-    setStoreLoading(false);
-  }
-
-  const cartLines = useMemo(() => getCartLines(products, cart), [products, cart]);
-  const cartSummary = useMemo(() => getCartSummary(products, cart, settings.minimumWholesaleQuantity), [products, cart, settings.minimumWholesaleQuantity]);
-  const summaryByProduct = Object.fromEntries(cartSummary.items.map((item) => [item.productId, item]));
-  const launches = products.slice(0, 6);
-
-  function selectVariant(product, variantId) {
-    const variant = product.variants.find((item) => item.id === variantId);
-    if (!variant) return;
-    const current = selections[product.id] ?? firstSelection(product);
-    const currentSize = variant.sizes.find((item) => item.label === current.size && item.stock > 0);
-    const size = currentSize?.label ?? variant.sizes.find((item) => item.stock > 0)?.label ?? variant.sizes[0]?.label ?? '';
-    setSelections((state) => ({
-      ...state,
-      [product.id]: { color: variant.color, printPattern: variant.printPattern, variantId: variant.id, size },
-    }));
-  }
-
-  function selectColor(product, color) {
-    const variant = product.variants.find((item) => item.color === color && item.sizes.some((size) => size.stock > 0)) ?? product.variants.find((item) => item.color === color);
-    if (variant) selectVariant(product, variant.id);
-  }
-
-  function selectPrint(product, printPattern) {
-    const current = selections[product.id] ?? firstSelection(product);
-    const variant = product.variants.find((item) => item.color === current.color && item.printPattern === printPattern);
-    if (variant) selectVariant(product, variant.id);
-  }
-
-  function changeQuantity(product, variant, size, delta) {
-    const key = makeCartKey(product.id, variant.id, size.label);
-    setCart((current) => {
-      const nextQuantity = Math.max(0, Math.min(size.stock, (current[key] ?? 0) + delta));
-      const next = { ...current };
-      if (nextQuantity === 0) delete next[key]; else next[key] = nextQuantity;
-      return next;
-    });
-  }
-
-  function addSelected(product) {
-    const selected = selections[product.id] ?? firstSelection(product);
-    const variant = product.variants.find((item) => item.id === selected.variantId);
-    const size = variant?.sizes.find((item) => item.label === selected.size);
-    if (!variant || !size || size.stock === 0) return;
-    const key = makeCartKey(product.id, variant.id, size.label);
-    if ((cart[key] ?? 0) >= size.stock) return;
-    changeQuantity(product, variant, size, 1);
-    setCartOpen(true);
-  }
-
-  function ruleText(product) {
-    if (product.wholesaleRuleMode === 'disabled') return 'Este produto não participa das regras de atacado.';
-    if (product.wholesaleRuleMode === 'product') return `Regra específica: atacado a partir de ${product.wholesaleMinimumQuantity} unidades deste produto.`;
-    return `Regra geral: atacado quando o carrinho atingir ${settings.minimumWholesaleQuantity} peças.`;
-  }
-
-  const whatsappLines = cartLines.map((line) => {
-    const summary = summaryByProduct[line.product.id];
-    return `${line.quantity}x ${line.product.name} · cor ${line.variant.color} · estampa ${line.variant.printPattern} · tam. ${line.size.label} (${summary?.wholesale ? 'atacado' : 'varejo'} a ${money(summary?.unitPrice ?? 0)})`;
-  }).join(', ');
-
-  if (storeLoading) return <main className="empty-store"><h1>CHIQUEHELITA</h1><p>Carregando coleção...</p></main>;
-  if (storeError) return <main className="empty-store"><h1>CHIQUEHELITA</h1><p>{storeError}</p></main>;
-  if (!products.length) return <main className="empty-store"><h1>CHIQUEHELITA</h1><p>Novidades chegando em breve.</p></main>;
-
-  return <div className="app">
-    <header className="header">
-      <button className="icon mobile" aria-label="Abrir menu"><Menu size={22}/></button>
-      <a className="brand-logo" href="#inicio" aria-label="Chique Helita"><img src={logo} alt="Chique Helita" /></a>
-      <nav><a href="#inicio">Início</a><a href="#catalogo">Vestidos</a><a href="#promocoes">Promoções</a><a href="#sobre">Sobre nós</a></nav>
-      <div className="actions"><button className="icon" aria-label="Buscar"><Search size={20}/></button><button className="icon cart-button" aria-label="Carrinho" onClick={() => setCartOpen(true)}><ShoppingBag size={21}/>{cartSummary.totalQuantity > 0 && <span>{cartSummary.totalQuantity}</span>}</button></div>
-    </header>
-
-    <main>
-      <section id="inicio" className="hero hero-brand">
-        <div className="hero-copy">
-          <p className="eyebrow">MODA FEMININA</p>
-          <h1>Elegância que<br/><em>veste você.</em></h1>
-          <p className="hero-text">Vestidos femininos escolhidos para valorizar sua beleza, com conforto e personalidade.</p>
-          <div className="hero-actions"><a className="button" href="#catalogo">Ver coleção</a><a className="button secondary" href="#catalogo">Comprar no atacado</a></div>
-          <div className="hero-mini-benefits">
-            <div><ShieldCheck size={19}/><span><strong>Compra segura</strong><small>Seu pedido protegido</small></span></div>
-            <div><MessageCircle size={19}/><span><strong>Atendimento personalizado</strong><small>Fale conosco pelo WhatsApp</small></span></div>
-            <div><Heart size={19}/><span><strong>Moda feminina</strong><small>Escolhas feitas para você</small></span></div>
-          </div>
-        </div>
-        <div className="hero-brand-art" aria-hidden="true">
-          <img src={logo} alt=""/>
-          <div className="hero-brand-caption"><span>MODA FEMININA</span><strong>VAREJO &amp; ATACADO</strong><i>♥</i></div>
-        </div>
-      </section>
-
-      <section className="benefits benefits-wide">
-        <div><ShieldCheck size={22}/><strong>Compra segura</strong><span>Seu pedido protegido</span></div>
-        <div><Truck size={22}/><strong>Atendimento para todo o Brasil</strong><span>Consulte condições pelo WhatsApp</span></div>
-        <div><MessageCircle size={22}/><strong>Atendimento personalizado</strong><span>Fale diretamente com a loja</span></div>
-        <div><Sparkles size={22}/><strong>Varejo &amp; atacado</strong><span>Regras de preço aplicadas no carrinho</span></div>
-      </section>
-
-      <section className="launches-section" aria-labelledby="launches-title">
-        <div className="launches-heading"><p className="eyebrow">LANÇAMENTOS</p><h2 id="launches-title">Novidades para <em>você</em></h2><span>♥</span></div>
-        <div className="launches-row">
-          {launches.map((product, index) => {
-            const image = launchImage(product);
-            return <a className="launch-card" key={product.id} href="#catalogo" aria-label={`Ver ${product.name}`}>
-              <div className="launch-card-image">{image ? <img src={image} alt={product.name}/> : <div className="product-placeholder">CHIQUEHELITA</div>}{index === 0 && <b>Novo</b>}</div>
-              <div className="launch-card-info"><span>{product.category}</span><strong>{product.name}</strong><small>{money(retailPrice(product))}</small></div>
-            </a>;
-          })}
-        </div>
-      </section>
-
-      <section id="catalogo" className="products-section">
-        <div className="section-head"><div><p className="eyebrow">NOSSA COLEÇÃO</p><h2>Peças em destaque</h2><p>Navegue por todas as fotos e escolha cor, estampa e tamanho. Ao tocar em uma foto, a variação correspondente é selecionada automaticamente.</p></div><a href="#catalogo">Ver todos →</a></div>
-        <div className="products-list">
-          {products.map((product) => {
-            const selected = selections[product.id] ?? firstSelection(product);
-            const variant = product.variants.find((item) => item.id === selected.variantId);
-            const selectedSize = variant?.sizes.find((item) => item.label === selected.size);
-            const key = variant && selectedSize ? makeCartKey(product.id, variant.id, selectedSize.label) : '';
-            const selectedQuantity = key ? (cart[key] ?? 0) : 0;
-            const canAdd = Boolean(selectedSize?.stock) && selectedQuantity < selectedSize.stock;
-            const summary = summaryByProduct[product.id];
-            const colors = [...new Set(product.variants.map((item) => item.color))];
-            const prints = [...new Set(product.variants.filter((item) => item.color === selected.color).map((item) => item.printPattern))];
-
-            return <article className="product-card" key={product.id}>
-              <ProductGallery product={product} selectedVariantId={selected.variantId} onSelectVariant={(variantId) => selectVariant(product, variantId)}/>
-              <div className="product-info">
-                <p className="category">{product.category.toUpperCase()}</p><h3>{product.name}</h3><p className="description">{product.description}</p>
-                <div className="prices">{product.promotionalPrice && <span className="old-price">{money(product.price)}</span>}<strong>{money(retailPrice(product))}</strong>{product.wholesaleRuleMode !== 'disabled' && <span>Atacado: {money(product.wholesalePrice)}</span>}</div>
-                <div className="wholesale-rule">{ruleText(product)}{summary?.quantity > 0 && <><br/><strong>{summary.wholesale ? 'Preço de atacado ativo neste produto.' : 'Preço de varejo ativo neste produto.'}</strong></>}</div>
-                <div className="stock-summary">{totalStock(product) > 0 ? `${totalStock(product)} unidades disponíveis no total` : 'Produto esgotado'}</div>
-                <div className="variant-selector"><span>Cor</span><div>{colors.map((color) => <button key={color} className={selected.color === color ? 'selected' : ''} onClick={() => selectColor(product, color)}>{color}</button>)}</div></div>
-                <div className="variant-selector"><span>Estampa</span><div>{prints.map((print) => <button key={print} className={selected.printPattern === print ? 'selected' : ''} onClick={() => selectPrint(product, print)}>{print}</button>)}</div></div>
-                <div className="sizes"><span>Tamanho</span>{(variant?.sizes ?? []).map((item) => <button key={item.label} disabled={item.stock === 0} title={`${item.stock} em estoque`} className={selected.size === item.label ? 'selected' : ''} onClick={() => setSelections((current) => ({ ...current, [product.id]: { ...selected, size: item.label } }))}>{item.label}<small>{item.stock}</small></button>)}</div>
-                <button className="button full" disabled={!canAdd} onClick={() => addSelected(product)}>{canAdd ? `Adicionar ${selected.color} · ${selected.printPattern} · ${selected.size}` : 'Combinação indisponível'}</button>
-                {product.sizeGuideImage && <a className="size-guide-link" href={product.sizeGuideImage} target="_blank" rel="noreferrer">Ver guia de medidas</a>}
-              </div>
-            </article>;
-          })}
-        </div>
-      </section>
-
-      <section id="promocoes" className="promo"><div><p className="eyebrow">OFERTAS ESPECIAIS</p><h2>Seu próximo look<br/><em>começa aqui.</em></h2><p>Fique de olho nas novidades e condições especiais da CHIQUEHELITA.</p><a className="button" href="#catalogo">Ver produtos</a></div></section>
-    </main>
-
-    <footer id="sobre"><div className="footer-brand"><img src={logo} alt="Chique Helita"/><p>Moda feminina com elegância e personalidade.</p></div><div><h4>Atendimento</h4><p>Segunda a sábado</p><p>WhatsApp da loja</p></div><div><h4>Links</h4><p>Instagram</p><p>Política de privacidade</p></div></footer>
-
-    {cartOpen && <div className="overlay" onClick={() => setCartOpen(false)}><aside className="cart" onClick={(event) => event.stopPropagation()}>
-      <div className="cart-head"><h2>Seu carrinho</h2><button className="icon" onClick={() => setCartOpen(false)} aria-label="Fechar"><X/></button></div>
-      {cartSummary.totalQuantity === 0 ? <p className="empty">Seu carrinho está vazio.</p> : <>
-        {cartLines.map((line) => {
-          const summary = summaryByProduct[line.product.id];
-          const image = line.variant.image || line.product.image;
-          return <div className="cart-item" key={makeCartKey(line.product.id, line.variant.id, line.size.label)}>{image ? <img src={image} alt={line.product.name}/> : <div className="cart-image-placeholder"/>}<div><strong>{line.product.name}</strong><span>Cor: {line.variant.color}</span><span>Estampa: {line.variant.printPattern}</span><span>Tamanho: {line.size.label}</span><span>Estoque desta combinação: {line.size.stock}</span><b>{money(summary?.unitPrice ?? 0)} por peça · {summary?.wholesale ? 'atacado' : 'varejo'}</b><div className="stepper"><button onClick={() => changeQuantity(line.product, line.variant, line.size, -1)}><Minus size={15}/></button><span>{line.quantity}</span><button disabled={line.quantity >= line.size.stock} onClick={() => changeQuantity(line.product, line.variant, line.size, 1)}><Plus size={15}/></button></div></div></div>;
-        })}
-        <div className={`wholesale-cart-status ${cartSummary.generalWholesaleActive ? 'active' : ''}`}>{cartSummary.generalWholesaleActive ? `Regra geral de atacado atingida com ${cartSummary.totalQuantity} peças.` : `Faltam ${Math.max(0, settings.minimumWholesaleQuantity - cartSummary.totalQuantity)} peças para atingir a regra geral de atacado.`}</div>
-        <div className="cart-total"><span>Total do pedido · {cartSummary.totalQuantity} peças</span><strong>{money(cartSummary.total)}</strong></div>
-        <a className="button full" href={`https://wa.me/${settings.whatsapp}?text=${encodeURIComponent(`Olá! Quero fazer este pedido: ${whatsappLines}. Total de peças: ${cartSummary.totalQuantity}. Total do pedido: ${money(cartSummary.total)}.`)}`} target="_blank" rel="noreferrer"><MessageCircle size={18}/> Finalizar pelo WhatsApp</a>
-      </>}
-    </aside></div>}
-  </div>;
+export default function StoreApp(){
+ const[products,setProducts]=useState([]),[settings,setSettings]=useState({minimumWholesaleQuantity:6,whatsapp:'556285166201'}),[storeLoading,setStoreLoading]=useState(true),[storeError,setStoreError]=useState(''),[cartOpen,setCartOpen]=useState(false),[cart,setCart]=useState({}),[selections,setSelections]=useState({});
+ useEffect(()=>{loadStore()},[]);
+ async function loadStore(){setStoreLoading(true);const[p,s]=await Promise.all([supabase.from('products').select(`id, slug, name, category, description, price, promotional_price, wholesale_price, wholesale_rule_mode, wholesale_minimum_quantity, image_url, size_guide_image_url, featured, product_variants (id, color, print_pattern, image_url, active, sort_order, product_variant_stock (id, size, stock, sort_order), product_variant_images (id, image_url, sort_order, is_primary))`).order('created_at',{ascending:false}),supabase.from('store_settings').select('minimum_wholesale_quantity, whatsapp').limit(1).maybeSingle()]);if(p.error||s.error){setStoreError('Não foi possível carregar o catálogo agora.');setStoreLoading(false);return}const n=(p.data??[]).map(normalizeProduct);setProducts(n);setSettings({minimumWholesaleQuantity:s.data?.minimum_wholesale_quantity??6,whatsapp:s.data?.whatsapp??'556285166201'});setSelections(Object.fromEntries(n.map(x=>[x.id,firstSelection(x)])));setStoreLoading(false)}
+ const cartLines=useMemo(()=>getCartLines(products,cart),[products,cart]);const cartSummary=useMemo(()=>getCartSummary(products,cart,settings.minimumWholesaleQuantity),[products,cart,settings.minimumWholesaleQuantity]);const summaryByProduct=Object.fromEntries(cartSummary.items.map(i=>[i.productId,i]));const launches=products.slice(0,6);
+ function selectVariant(p,id){const v=p.variants.find(i=>i.id===id);if(!v)return;const cur=selections[p.id]??firstSelection(p);const same=v.sizes.find(i=>i.label===cur.size&&i.stock>0);const size=same?.label??v.sizes.find(i=>i.stock>0)?.label??v.sizes[0]?.label??'';setSelections(st=>({...st,[p.id]:{color:v.color,printPattern:v.printPattern,variantId:v.id,size}}))}
+ function selectColor(p,color){const v=p.variants.find(i=>i.color===color&&i.sizes.some(s=>s.stock>0))??p.variants.find(i=>i.color===color);if(v)selectVariant(p,v.id)}
+ function selectPrint(p,printPattern){const cur=selections[p.id]??firstSelection(p);const v=p.variants.find(i=>i.color===cur.color&&i.printPattern===printPattern);if(v)selectVariant(p,v.id)}
+ function changeQuantity(p,v,size,delta){const key=makeCartKey(p.id,v.id,size.label);setCart(cur=>{const q=Math.max(0,Math.min(size.stock,(cur[key]??0)+delta));const next={...cur};if(q===0)delete next[key];else next[key]=q;return next})}
+ function addSelected(p){const sel=selections[p.id]??firstSelection(p),v=p.variants.find(i=>i.id===sel.variantId),size=v?.sizes.find(i=>i.label===sel.size);if(!v||!size||size.stock===0)return;const key=makeCartKey(p.id,v.id,size.label);if((cart[key]??0)>=size.stock)return;changeQuantity(p,v,size,1);setCartOpen(true)}
+ function ruleText(p){if(p.wholesaleRuleMode==='disabled')return'Este produto não participa das regras de atacado.';if(p.wholesaleRuleMode==='product')return`Regra específica: atacado a partir de ${p.wholesaleMinimumQuantity} unidades deste produto.`;return`Regra geral: atacado quando o carrinho atingir ${settings.minimumWholesaleQuantity} peças.`}
+ const whatsappLines=cartLines.map(line=>{const s=summaryByProduct[line.product.id];return`${line.quantity}x ${line.product.name} · cor ${line.variant.color} · estampa ${line.variant.printPattern} · tam. ${line.size.label} (${s?.wholesale?'atacado':'varejo'} a ${money(s?.unitPrice??0)})`}).join(', ');
+ if(storeLoading)return <main className="empty-store"><h1>CHIQUEHELITA</h1><p>Carregando coleção...</p></main>;if(storeError)return <main className="empty-store"><h1>CHIQUEHELITA</h1><p>{storeError}</p></main>;if(!products.length)return <main className="empty-store"><h1>CHIQUEHELITA</h1><p>Novidades chegando em breve.</p></main>;
+ return <div className="app"><header className="header"><button className="icon mobile" aria-label="Abrir menu"><Menu size={22}/></button><a className="brand-logo" href="#inicio"><img src={logo} alt="Chique Helita"/></a><nav><a href="#inicio">Início</a><a href="#catalogo">Vestidos</a><a href="#promocoes">Promoções</a><a href="#sobre">Sobre nós</a></nav><div className="actions"><button className="icon"><Search size={20}/></button><button className="icon cart-button" onClick={()=>setCartOpen(true)}><ShoppingBag size={21}/>{cartSummary.totalQuantity>0&&<span>{cartSummary.totalQuantity}</span>}</button></div></header><main>
+ <section id="inicio" className="hero hero-brand"><div className="hero-copy"><p className="eyebrow">MODA FEMININA</p><h1>Elegância que<br/><em>veste você.</em></h1><p className="hero-text">Vestidos femininos escolhidos para valorizar sua beleza, com conforto e personalidade.</p><div className="hero-actions"><a className="button" href="#catalogo">Ver coleção</a><a className="button secondary" href="#catalogo">Comprar no atacado</a></div></div><div className="hero-brand-art" aria-hidden="true"><img src={logo} alt=""/><div className="hero-brand-caption"><span>MODA FEMININA</span><strong>VAREJO &amp; ATACADO</strong><i>♥</i></div></div></section>
+ <section className="benefits benefits-wide"><div><ShieldCheck size={22}/><strong>Compra segura</strong><span>Seu pedido protegido</span></div><div><Truck size={22}/><strong>Atendimento para todo o Brasil</strong><span>Consulte condições pelo WhatsApp</span></div><div><MessageCircle size={22}/><strong>Atendimento personalizado</strong><span>Fale diretamente com a loja</span></div><div><Sparkles size={22}/><strong>Varejo &amp; atacado</strong><span>Regras de preço aplicadas no carrinho</span></div></section>
+ <section className="launches-section"><div className="launches-heading"><p className="eyebrow">LANÇAMENTOS</p><h2>Novidades para <em>você</em></h2><span>♥</span></div><div className="launches-row">{launches.map((p,index)=>{const image=launchImage(p);return <a className="launch-card" key={p.id} href="#catalogo"><div className="launch-card-image">{image?<img src={image} alt={p.name}/>:<div className="product-placeholder">CHIQUEHELITA</div>}{index===0&&<b>Novo</b>}</div><div className="launch-card-info"><span>{p.category}</span><strong>{p.name}</strong><small>{money(retailPrice(p))}</small></div></a>})}</div></section>
+ <section id="catalogo" className="products-section"><div className="section-head"><div><p className="eyebrow">NOSSA COLEÇÃO</p><h2>Peças em destaque</h2><p>Navegue por todas as fotos e escolha cor, estampa e tamanho. Ao tocar em uma foto, a variação correspondente é selecionada automaticamente.</p></div></div><div className="products-list">{products.map(p=>{const sel=selections[p.id]??firstSelection(p),v=p.variants.find(i=>i.id===sel.variantId),size=v?.sizes.find(i=>i.label===sel.size),key=v&&size?makeCartKey(p.id,v.id,size.label):'',q=key?(cart[key]??0):0,can=Boolean(size?.stock)&&q<size.stock,summary=summaryByProduct[p.id],colors=[...new Set(p.variants.map(i=>i.color))],prints=[...new Set(p.variants.filter(i=>i.color===sel.color).map(i=>i.printPattern))];return <article className="product-card" key={p.id}><ProductGallery product={p} selectedVariantId={sel.variantId} onSelectVariant={id=>selectVariant(p,id)}/><div className="product-info"><p className="category">{p.category.toUpperCase()}</p><h3>{p.name}</h3><p className="description">{p.description}</p><div className="prices">{p.promotionalPrice&&<span className="old-price">{money(p.price)}</span>}<strong>{money(retailPrice(p))}</strong>{p.wholesaleRuleMode!=='disabled'&&<span>Atacado: {money(p.wholesalePrice)}</span>}</div><div className="wholesale-rule">{ruleText(p)}{summary?.quantity>0&&<><br/><strong>{summary.wholesale?'Preço de atacado ativo neste produto.':'Preço de varejo ativo neste produto.'}</strong></>}</div><div className="stock-summary">{totalStock(p)>0?`${totalStock(p)} unidades disponíveis no total`:'Produto esgotado'}</div><div className="variant-selector"><span>Cor</span><div>{colors.map(c=><button key={c} className={sel.color===c?'selected':''} onClick={()=>selectColor(p,c)}>{c}</button>)}</div></div><div className="variant-selector"><span>Estampa</span><div>{prints.map(x=><button key={x} className={sel.printPattern===x?'selected':''} onClick={()=>selectPrint(p,x)}>{x}</button>)}</div></div><div className="sizes"><span>Tamanho</span>{(v?.sizes??[]).map(i=><button key={i.label} disabled={i.stock===0} className={sel.size===i.label?'selected':''} onClick={()=>setSelections(cur=>({...cur,[p.id]:{...sel,size:i.label}}))}>{i.label}<small>{i.stock}</small></button>)}</div><button className="button full" disabled={!can} onClick={()=>addSelected(p)}>{can?`Adicionar ${sel.color} · ${sel.printPattern} · ${sel.size}`:'Combinação indisponível'}</button>{p.sizeGuideImage&&<a className="size-guide-link" href={p.sizeGuideImage} target="_blank" rel="noreferrer">Ver guia de medidas</a>}</div></article>})}</div></section>
+ <section id="promocoes" className="promo"><div><p className="eyebrow">OFERTAS ESPECIAIS</p><h2>Seu próximo look<br/><em>começa aqui.</em></h2><p>Fique de olho nas novidades e condições especiais da CHIQUEHELITA.</p><a className="button" href="#catalogo">Ver produtos</a></div></section></main><footer id="sobre"><div className="footer-brand"><img src={logo} alt="Chique Helita"/><p>Moda feminina com elegância e personalidade.</p></div><div><h4>Atendimento</h4><p>Segunda a sábado</p><p>WhatsApp da loja</p></div><div><h4>Links</h4><p>Instagram</p><p>Política de privacidade</p></div></footer>
+ {cartOpen&&<div className="overlay" onClick={()=>setCartOpen(false)}><aside className="cart" onClick={e=>e.stopPropagation()}><div className="cart-head"><h2>Seu carrinho</h2><button className="icon" onClick={()=>setCartOpen(false)}><X/></button></div>{cartSummary.totalQuantity===0?<p className="empty">Seu carrinho está vazio.</p>:<>{cartLines.map(line=>{const s=summaryByProduct[line.product.id],image=line.variant.image||line.product.image;return <div className="cart-item" key={makeCartKey(line.product.id,line.variant.id,line.size.label)}>{image?<img src={image} alt={line.product.name}/>:<div className="cart-image-placeholder"/>}<div><strong>{line.product.name}</strong><span>Cor: {line.variant.color}</span><span>Estampa: {line.variant.printPattern}</span><span>Tamanho: {line.size.label}</span><b>{money(s?.unitPrice??0)} por peça · {s?.wholesale?'atacado':'varejo'}</b><div className="stepper"><button onClick={()=>changeQuantity(line.product,line.variant,line.size,-1)}><Minus size={15}/></button><span>{line.quantity}</span><button disabled={line.quantity>=line.size.stock} onClick={()=>changeQuantity(line.product,line.variant,line.size,1)}><Plus size={15}/></button></div></div></div>})}<div className={`wholesale-cart-status ${cartSummary.generalWholesaleActive?'active':''}`}>{cartSummary.generalWholesaleActive?`Regra geral de atacado atingida com ${cartSummary.totalQuantity} peças.`:`Faltam ${Math.max(0,settings.minimumWholesaleQuantity-cartSummary.totalQuantity)} peças para atingir a regra geral de atacado.`}</div><div className="cart-total"><span>Total do pedido · {cartSummary.totalQuantity} peças</span><strong>{money(cartSummary.total)}</strong></div><a className="button full" href={`https://wa.me/${settings.whatsapp}?text=${encodeURIComponent(`Olá! Quero fazer este pedido: ${whatsappLines}. Total de peças: ${cartSummary.totalQuantity}. Total do pedido: ${money(cartSummary.total)}.`)}`} target="_blank" rel="noreferrer"><MessageCircle size={18}/> Finalizar pelo WhatsApp</a></>}</aside></div>}</div>
 }
