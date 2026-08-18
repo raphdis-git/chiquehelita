@@ -95,6 +95,9 @@ export default function AdminApp() {
   const [optionSaving, setOptionSaving] = useState(false);
   const [optionMessage, setOptionMessage] = useState('');
   const [wholesaleMinimumDraft, setWholesaleMinimumDraft] = useState('6');
+  const [storeNameDraft, setStoreNameDraft] = useState('CHIQUEHELITA');
+  const [whatsappDraft, setWhatsappDraft] = useState('');
+  const [shippingDraft, setShippingDraft] = useState({ originPostalCode:'', weightGrams:'500', heightCm:'10', widthCm:'20', lengthCm:'30', maxItems:'5', handlingDays:'1', markup:'0', melhorEnvioEnabled:false, correiosEnabled:false });
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsMessage, setSettingsMessage] = useState('');
   const [uploadingImages, setUploadingImages] = useState({});
@@ -117,7 +120,7 @@ export default function AdminApp() {
           product_variant_images (id, image_url, sort_order, is_primary)
         )
       `).order('created_at', { ascending: false }),
-      supabase.from('store_settings').select('id, store_name, minimum_wholesale_quantity, primary_color, session_timeout_minutes').limit(1).maybeSingle(),
+      supabase.from('store_settings').select('id, store_name, whatsapp, minimum_wholesale_quantity, primary_color, session_timeout_minutes, origin_postal_code, package_weight_grams, package_height_cm, package_width_cm, package_length_cm, max_items_per_package, shipping_handling_days, shipping_markup_percent, melhor_envio_enabled, correios_enabled').limit(1).maybeSingle(),
       supabase.from('catalog_options').select('id, option_type, name, active').order('name'),
       supabase.from('orders').select('*, order_items(*)').order('created_at', { ascending: false }),
     ]);
@@ -137,6 +140,14 @@ export default function AdminApp() {
     setProducts(normalized);
     setSettings(settingsResult.data ?? null);
     setWholesaleMinimumDraft(String(settingsResult.data?.minimum_wholesale_quantity ?? 6));
+    setStoreNameDraft(settingsResult.data?.store_name ?? 'CHIQUEHELITA');
+    setWhatsappDraft(settingsResult.data?.whatsapp ?? '');
+    setShippingDraft({
+      originPostalCode:settingsResult.data?.origin_postal_code ?? '', weightGrams:String(settingsResult.data?.package_weight_grams ?? 500),
+      heightCm:String(settingsResult.data?.package_height_cm ?? 10), widthCm:String(settingsResult.data?.package_width_cm ?? 20), lengthCm:String(settingsResult.data?.package_length_cm ?? 30),
+      maxItems:String(settingsResult.data?.max_items_per_package ?? 5), handlingDays:String(settingsResult.data?.shipping_handling_days ?? 1), markup:String(settingsResult.data?.shipping_markup_percent ?? 0),
+      melhorEnvioEnabled:Boolean(settingsResult.data?.melhor_envio_enabled), correiosEnabled:Boolean(settingsResult.data?.correios_enabled),
+    });
     setCatalogOptions(optionsResult.data ?? []);
     setOrders(ordersResult.data ?? []);
     setDashboardLoading(false);
@@ -281,19 +292,31 @@ export default function AdminApp() {
   async function handleSaveSettings(event) {
     event.preventDefault();
     const minimum = Number(wholesaleMinimumDraft);
+    const storeName = storeNameDraft.trim();
+    const whatsapp = whatsappDraft.replace(/\D/g, '');
+    const originPostalCode = shippingDraft.originPostalCode.replace(/\D/g, '');
+    const shippingNumbers = {
+      package_weight_grams:Number(shippingDraft.weightGrams), package_height_cm:Number(shippingDraft.heightCm), package_width_cm:Number(shippingDraft.widthCm),
+      package_length_cm:Number(shippingDraft.lengthCm), max_items_per_package:Number(shippingDraft.maxItems), shipping_handling_days:Number(shippingDraft.handlingDays), shipping_markup_percent:Number(shippingDraft.markup),
+    };
     setSettingsMessage('');
     if (!Number.isInteger(minimum) || minimum < 1) {
       setSettingsMessage('Informe uma quantidade mínima válida, com pelo menos 1 peça.'); return;
     }
+    if (storeName.length < 2) { setSettingsMessage('Informe o nome comercial da loja.'); return; }
+    if (!/^\d{10,15}$/.test(whatsapp)) { setSettingsMessage('Informe o WhatsApp com código do país e DDD, somente números.'); return; }
+    if ((shippingDraft.melhorEnvioEnabled || shippingDraft.correiosEnabled) && !/^\d{8}$/.test(originPostalCode)) { setSettingsMessage('Informe um CEP de origem válido para ativar o frete.'); return; }
+    if (![shippingNumbers.package_weight_grams,shippingNumbers.package_height_cm,shippingNumbers.package_width_cm,shippingNumbers.package_length_cm,shippingNumbers.max_items_per_package].every((value) => Number.isFinite(value) && value > 0) || !Number.isInteger(shippingNumbers.shipping_handling_days) || shippingNumbers.shipping_handling_days < 0 || !Number.isFinite(shippingNumbers.shipping_markup_percent) || shippingNumbers.shipping_markup_percent < 0) { setSettingsMessage('Revise peso, dimensões, quantidade por pacote, prazo e acréscimo do frete.'); return; }
     if (!settings?.id) { setSettingsMessage('Não foi possível identificar as configurações da loja.'); return; }
     setSettingsSaving(true);
-    const { data, error } = await supabase.from('store_settings').update({ minimum_wholesale_quantity: minimum })
-      .eq('id', settings.id).select('id, store_name, minimum_wholesale_quantity, primary_color, session_timeout_minutes').single();
+    const { data, error } = await supabase.from('store_settings').update({ store_name: storeName, whatsapp, minimum_wholesale_quantity: minimum, origin_postal_code:originPostalCode, ...shippingNumbers, melhor_envio_enabled:shippingDraft.melhorEnvioEnabled, correios_enabled:shippingDraft.correiosEnabled })
+      .eq('id', settings.id).select('id, store_name, whatsapp, minimum_wholesale_quantity, primary_color, session_timeout_minutes, origin_postal_code, package_weight_grams, package_height_cm, package_width_cm, package_length_cm, max_items_per_package, shipping_handling_days, shipping_markup_percent, melhor_envio_enabled, correios_enabled').single();
     if (error || !data) {
       setSettingsMessage('Não foi possível salvar a nova regra geral de atacado.'); setSettingsSaving(false); return;
     }
-    setSettings(data); setWholesaleMinimumDraft(String(data.minimum_wholesale_quantity));
-    setSettingsMessage('Regra geral de atacado atualizada com sucesso.'); setSettingsSaving(false);
+    setSettings(data); setWholesaleMinimumDraft(String(data.minimum_wholesale_quantity)); setStoreNameDraft(data.store_name); setWhatsappDraft(data.whatsapp);
+    setShippingDraft({ originPostalCode:data.origin_postal_code ?? '', weightGrams:String(data.package_weight_grams), heightCm:String(data.package_height_cm), widthCm:String(data.package_width_cm), lengthCm:String(data.package_length_cm), maxItems:String(data.max_items_per_package), handlingDays:String(data.shipping_handling_days), markup:String(data.shipping_markup_percent), melhorEnvioEnabled:data.melhor_envio_enabled, correiosEnabled:data.correios_enabled });
+    setSettingsMessage('Configurações comerciais e logísticas atualizadas com sucesso.'); setSettingsSaving(false);
   }
 
   async function uploadFile(file, uploadKey) {
@@ -630,10 +653,24 @@ export default function AdminApp() {
           </section>}
 
           {adminSection === 'settings' && <section className="admin-panel admin-settings-panel">
-            <div className="admin-settings-heading"><div><p className="admin-eyebrow">REGRA DE ATACADO</p><h2><Settings size={21}/> Quantidade mínima geral</h2><p>Produtos com “Usar regra geral” passam automaticamente para o preço de atacado ao atingir esta quantidade no carrinho.</p></div></div>
+            <div className="admin-settings-heading"><div><p className="admin-eyebrow">DADOS COMERCIAIS E LOGÍSTICA</p><h2><Settings size={21}/> Configurações da loja</h2><p>Atualize o contato, atacado e a estrutura usada no cálculo automático de frete.</p></div></div>
             <form className="admin-settings-form" onSubmit={handleSaveSettings}>
-              <label>Quantidade mínima geral<input type="number" min="1" step="1" value={wholesaleMinimumDraft} onChange={(e) => setWholesaleMinimumDraft(e.target.value)} required/></label>
-              <button type="submit" className="admin-primary-button" disabled={settingsSaving}><Save size={17}/>{settingsSaving ? 'Salvando...' : 'Salvar regra geral'}</button>
+              <div className="admin-settings-grid"><label>Nome comercial<input value={storeNameDraft} onChange={(e) => setStoreNameDraft(e.target.value)} required/></label>
+                <label>WhatsApp <small>País + DDD + número</small><input inputMode="numeric" value={whatsappDraft} onChange={(e) => setWhatsappDraft(e.target.value.replace(/\D/g, '').slice(0,15))} placeholder="5562999999999" required/></label>
+                <label>Quantidade mínima geral<input type="number" min="1" step="1" value={wholesaleMinimumDraft} onChange={(e) => setWholesaleMinimumDraft(e.target.value)} required/></label></div>
+              <section className="admin-shipping-settings"><header><div><p className="admin-eyebrow">FRETE AUTOMÁTICO</p><h3>Origem e embalagem padrão</h3><span>Use as medidas do pacote pronto para postagem. As credenciais serão adicionadas separadamente como segredos protegidos.</span></div></header>
+                <div className="admin-settings-grid shipping"><label>CEP de origem<input inputMode="numeric" maxLength="8" value={shippingDraft.originPostalCode} onChange={(e) => setShippingDraft((current) => ({...current,originPostalCode:e.target.value.replace(/\D/g,'').slice(0,8)}))} placeholder="Somente números"/></label>
+                  <label>Peso por vestido (g)<input type="number" min="1" step="1" value={shippingDraft.weightGrams} onChange={(e) => setShippingDraft((current) => ({...current,weightGrams:e.target.value}))}/></label>
+                  <label>Altura do pacote (cm)<input type="number" min="1" step="0.1" value={shippingDraft.heightCm} onChange={(e) => setShippingDraft((current) => ({...current,heightCm:e.target.value}))}/></label>
+                  <label>Largura do pacote (cm)<input type="number" min="1" step="0.1" value={shippingDraft.widthCm} onChange={(e) => setShippingDraft((current) => ({...current,widthCm:e.target.value}))}/></label>
+                  <label>Comprimento do pacote (cm)<input type="number" min="1" step="0.1" value={shippingDraft.lengthCm} onChange={(e) => setShippingDraft((current) => ({...current,lengthCm:e.target.value}))}/></label>
+                  <label>Máximo de vestidos/pacote<input type="number" min="1" step="1" value={shippingDraft.maxItems} onChange={(e) => setShippingDraft((current) => ({...current,maxItems:e.target.value}))}/></label>
+                  <label>Prazo de preparação (dias)<input type="number" min="0" step="1" value={shippingDraft.handlingDays} onChange={(e) => setShippingDraft((current) => ({...current,handlingDays:e.target.value}))}/></label>
+                  <label>Acréscimo no frete (%)<input type="number" min="0" step="0.01" value={shippingDraft.markup} onChange={(e) => setShippingDraft((current) => ({...current,markup:e.target.value}))}/></label></div>
+                <div className="admin-shipping-providers"><label><input type="checkbox" checked={shippingDraft.melhorEnvioEnabled} onChange={(e) => setShippingDraft((current) => ({...current,melhorEnvioEnabled:e.target.checked}))}/><div><strong>Melhor Envio</strong><span>Correios, Jadlog e demais serviços habilitados na conta.</span></div><em>{shippingDraft.melhorEnvioEnabled ? 'Preparado' : 'Desativado'}</em></label>
+                  <label><input type="checkbox" checked={shippingDraft.correiosEnabled} onChange={(e) => setShippingDraft((current) => ({...current,correiosEnabled:e.target.checked}))}/><div><strong>Correios direto</strong><span>Usará contrato e cartão de postagem próprios da loja.</span></div><em>{shippingDraft.correiosEnabled ? 'Preparado' : 'Desativado'}</em></label></div>
+              </section>
+              <button type="submit" className="admin-primary-button admin-settings-save" disabled={settingsSaving}><Save size={17}/>{settingsSaving ? 'Salvando...' : 'Salvar configurações'}</button>
             </form>
             {settingsMessage && <p className={settingsMessage.includes('sucesso') ? 'admin-success-message' : 'admin-message'}>{settingsMessage}</p>}
           </section>}
