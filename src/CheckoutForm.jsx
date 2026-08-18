@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { MessageCircle } from 'lucide-react';
 import { buildWhatsAppMessage, validateCustomer } from './data/order';
+import { supabase } from './lib/supabase';
 
 const initialCustomer = { name: '', email: '', taxId: '', phone: '', address: '', addressNumber: '', district: '', city: '', state: '', postalCode: '', fulfillment: 'delivery', payment: '', notes: '' };
 const onlyDigits = (value, maxLength) => value.replace(/\D/g, '').slice(0, maxLength);
@@ -8,15 +9,22 @@ const onlyDigits = (value, maxLength) => value.replace(/\D/g, '').slice(0, maxLe
 export default function CheckoutForm({ whatsapp, lines, summary, money }) {
   const [customer, setCustomer] = useState(initialCustomer);
   const [errors, setErrors] = useState({});
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
   const update = (field, value) => setCustomer((current) => ({ ...current, [field]: value }));
 
-  function submit(event) {
+  async function submit(event) {
     event.preventDefault();
     const nextErrors = validateCustomer(customer);
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length) return;
-    const message = buildWhatsAppMessage({ customer, lines, summary, money });
+    setSubmitting(true); setSubmitError('');
+    const payloadLines = lines.map((line) => ({ productId: line.product.id, variantId: line.variant.id, size: line.size.label, quantity: line.quantity }));
+    const { data, error } = await supabase.functions.invoke('submit-order', { body: { customer, lines: payloadLines } });
+    if (error || !data?.orderNumber) { setSubmitError(data?.error || 'Não foi possível registrar o pedido. Tente novamente.'); setSubmitting(false); return; }
+    const message = buildWhatsAppMessage({ customer, lines, summary, money, orderNumber: data.orderNumber });
     window.open(`https://wa.me/${whatsapp}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
+    setSubmitting(false);
   }
 
   return <form className="checkout-form" onSubmit={submit} noValidate>
@@ -38,8 +46,9 @@ export default function CheckoutForm({ whatsapp, lines, summary, money }) {
     <label>Como deseja receber?<select value={customer.fulfillment} onChange={(event) => update('fulfillment', event.target.value)}><option value="delivery">Entrega — frete a combinar</option><option value="pickup">Retirada — detalhes a combinar</option></select></label>
     <label>Forma de pagamento<select value={customer.payment} onChange={(event) => update('payment', event.target.value)} aria-invalid={Boolean(errors.payment)}><option value="">Selecione</option><option>Pix</option><option>Cartão</option><option>Dinheiro</option><option>A combinar</option></select>{errors.payment && <small>{errors.payment}</small>}</label>
     <label>Observações (opcional)<textarea rows="2" value={customer.notes} onChange={(event) => update('notes', event.target.value)} placeholder="Ex.: preferência de horário ou dúvida sobre o tamanho"/></label>
-    <p className="checkout-privacy">Seus dados serão usados somente para atendimento, emissão e entrega do pedido. Eles não ficam armazenados neste site; serão enviados diretamente à loja pelo WhatsApp.</p>
-    <button className="button full" type="submit"><MessageCircle size={18}/> Finalizar pelo WhatsApp</button>
+    <p className="checkout-privacy">Seus dados serão armazenados com acesso restrito à loja e usados somente para atendimento, emissão e entrega do pedido. Ao continuar, eles também serão enviados pelo WhatsApp.</p>
+    {submitError && <p className="checkout-error">{submitError}</p>}
+    <button className="button full" type="submit" disabled={submitting}><MessageCircle size={18}/> {submitting ? 'Registrando pedido...' : 'Finalizar pelo WhatsApp'}</button>
   </form>;
 }
 
