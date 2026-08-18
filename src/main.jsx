@@ -8,6 +8,7 @@ import './launches-carousel.css';
 import './gallery.css';
 import './product-page.css';
 import './search-menu.css';
+import './checkout.css';
 
 const isAdminRoute = /\/admin\/?$/.test(window.location.pathname);
 
