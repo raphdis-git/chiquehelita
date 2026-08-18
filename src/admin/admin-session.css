@@ -1,0 +1,40 @@
+.admin-session-settings {
+  width: 100%;
+  padding: 18px;
+  border: 1px solid #f4bfd9;
+  border-radius: 13px;
+  background: #fffafd;
+  box-sizing: border-box;
+}
+
+.admin-session-settings header { margin-bottom: 14px; }
+.admin-session-settings h3 { display: flex; align-items: center; gap: 8px; margin: 4px 0 5px; }
+.admin-session-settings header span,
+.admin-session-settings label small { color: var(--admin-muted); font-weight: 500; }
+.admin-session-settings label { max-width: 360px; }
+.admin-session-settings label small { font-size: 11px; line-height: 1.4; }
+
+.admin-session-warning {
+  position: fixed;
+  inset: 0;
+  z-index: 1500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(18, 20, 25, .68);
+}
+
+.admin-session-warning > div {
+  width: min(430px, 100%);
+  padding: 30px;
+  text-align: center;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, .25);
+}
+
+.admin-session-warning svg { color: var(--admin-pink); }
+.admin-session-warning h2 { margin: 12px 0 8px; }
+.admin-session-warning p { margin: 0 0 20px; color: var(--admin-muted); line-height: 1.5; }
+.admin-session-warning strong { color: var(--admin-pink-dark); }

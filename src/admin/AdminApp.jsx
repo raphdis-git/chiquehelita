@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Boxes, CircleDollarSign, Home, ImagePlus, LockKeyhole, LogOut, PackageCheck,
   Pencil, Plus, RefreshCw, Save, Settings, ShieldCheck, ShoppingBag, Tags,
@@ -11,6 +11,7 @@ import './admin-orders.css';
 import './admin-orders-dashboard.css';
 import './admin-clients.css';
 import './admin-catalog.css';
+import './admin-session.css';
 
 const SIZE_LABELS = ['PP', 'P', 'M', 'G', 'GG'];
 const OPTION_LABELS = { category: 'categoria', color: 'cor', print: 'estampa' };
@@ -96,18 +97,59 @@ export default function AdminApp() {
   const [optionSaving, setOptionSaving] = useState(false);
   const [optionMessage, setOptionMessage] = useState('');
   const [wholesaleMinimumDraft, setWholesaleMinimumDraft] = useState('6');
+  const [sessionTimeoutDraft, setSessionTimeoutDraft] = useState('60');
   const [storeNameDraft, setStoreNameDraft] = useState('CHIQUEHELITA');
   const [whatsappDraft, setWhatsappDraft] = useState('');
   const [shippingDraft, setShippingDraft] = useState({ originPostalCode:'', weightGrams:'500', packagingTareGrams:'100', heightCm:'10', widthCm:'20', lengthCm:'30', maxItems:'5', handlingDays:'1', markup:'0', melhorEnvioEnabled:false, correiosEnabled:false });
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsMessage, setSettingsMessage] = useState('');
   const [uploadingImages, setUploadingImages] = useState({});
+  const [sessionWarningSeconds, setSessionWarningSeconds] = useState(null);
+  const lastAdminActivity = useRef(Date.now());
+  const sessionWarningActive = useRef(false);
+  const sessionEnding = useRef(false);
 
   useEffect(() => {
     checkSession();
     const { data: { subscription } } = supabase.auth.onAuthStateChange(() => checkSession());
     return () => subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!session || !isAdmin || !settings) return undefined;
+    const timeoutMs = Math.max(5, Number(settings.session_timeout_minutes) || 60) * 60 * 1000;
+    const warningMs = Math.min(2 * 60 * 1000, timeoutMs / 2);
+    lastAdminActivity.current = Date.now();
+    sessionWarningActive.current = false;
+    sessionEnding.current = false;
+    setSessionWarningSeconds(null);
+
+    const registerActivity = () => {
+      if (!sessionWarningActive.current && !sessionEnding.current) lastAdminActivity.current = Date.now();
+    };
+    const activityEvents = ['pointerdown', 'keydown', 'touchstart', 'scroll'];
+    activityEvents.forEach((eventName) => window.addEventListener(eventName, registerActivity, { passive: true }));
+    const timer = window.setInterval(async () => {
+      const remainingMs = timeoutMs - (Date.now() - lastAdminActivity.current);
+      if (remainingMs <= 0) {
+        if (sessionEnding.current) return;
+        sessionEnding.current = true;
+        sessionWarningActive.current = false;
+        setSessionWarningSeconds(null);
+        await supabase.auth.signOut();
+        clearAdminSession('Sua sessão expirou por inatividade. Faça login novamente.');
+        return;
+      }
+      if (remainingMs <= warningMs) {
+        sessionWarningActive.current = true;
+        setSessionWarningSeconds(Math.ceil(remainingMs / 1000));
+      }
+    }, 1000);
+    return () => {
+      window.clearInterval(timer);
+      activityEvents.forEach((eventName) => window.removeEventListener(eventName, registerActivity));
+    };
+  }, [session, isAdmin, settings?.session_timeout_minutes]);
 
   async function loadDashboard() {
     setDashboardLoading(true);
@@ -142,6 +184,7 @@ export default function AdminApp() {
     setProducts(normalized);
     setSettings(settingsResult.data ?? null);
     setWholesaleMinimumDraft(String(settingsResult.data?.minimum_wholesale_quantity ?? 6));
+    setSessionTimeoutDraft(String(settingsResult.data?.session_timeout_minutes ?? 60));
     setStoreNameDraft(settingsResult.data?.store_name ?? 'CHIQUEHELITA');
     setWhatsappDraft(settingsResult.data?.whatsapp ?? '');
     setShippingDraft({
@@ -178,7 +221,18 @@ export default function AdminApp() {
   }
   async function handleLogout() {
     await supabase.auth.signOut();
+    clearAdminSession();
+  }
+  function clearAdminSession(feedback = '') {
+    sessionEnding.current = false; sessionWarningActive.current = false; setSessionWarningSeconds(null);
     setSession(null); setIsAdmin(false); setProducts([]); setOrders([]); setSettings(null); setCatalogOptions([]);
+    if (feedback) setMessage(feedback);
+  }
+  function continueAdminSession() {
+    if (sessionEnding.current || sessionWarningSeconds === null) return;
+    lastAdminActivity.current = Date.now();
+    sessionWarningActive.current = false;
+    setSessionWarningSeconds(null);
   }
 
   async function updateOrderStatus(orderId, status) {
@@ -295,6 +349,7 @@ export default function AdminApp() {
   async function handleSaveSettings(event) {
     event.preventDefault();
     const minimum = Number(wholesaleMinimumDraft);
+    const sessionTimeoutMinutes = Number(sessionTimeoutDraft);
     const storeName = storeNameDraft.trim();
     const whatsapp = whatsappDraft.replace(/\D/g, '');
     const originPostalCode = shippingDraft.originPostalCode.replace(/\D/g, '');
@@ -306,18 +361,21 @@ export default function AdminApp() {
     if (!Number.isInteger(minimum) || minimum < 1) {
       setSettingsMessage('Informe uma quantidade mínima válida, com pelo menos 1 peça.'); return;
     }
+    if (!Number.isInteger(sessionTimeoutMinutes) || sessionTimeoutMinutes < 5 || sessionTimeoutMinutes > 480) {
+      setSettingsMessage('Informe um tempo de sessão entre 5 e 480 minutos.'); return;
+    }
     if (storeName.length < 2) { setSettingsMessage('Informe o nome comercial da loja.'); return; }
     if (!/^\d{10,15}$/.test(whatsapp)) { setSettingsMessage('Informe o WhatsApp com código do país e DDD, somente números.'); return; }
     if ((shippingDraft.melhorEnvioEnabled || shippingDraft.correiosEnabled) && !/^\d{8}$/.test(originPostalCode)) { setSettingsMessage('Informe um CEP de origem válido para ativar o frete.'); return; }
     if (![shippingNumbers.package_weight_grams,shippingNumbers.package_height_cm,shippingNumbers.package_width_cm,shippingNumbers.package_length_cm,shippingNumbers.max_items_per_package].every((value) => Number.isFinite(value) && value > 0) || !Number.isFinite(shippingNumbers.packaging_tare_grams) || shippingNumbers.packaging_tare_grams < 0 || !Number.isInteger(shippingNumbers.shipping_handling_days) || shippingNumbers.shipping_handling_days < 0 || !Number.isFinite(shippingNumbers.shipping_markup_percent) || shippingNumbers.shipping_markup_percent < 0) { setSettingsMessage('Revise peso, embalagem, dimensões, quantidade por pacote, prazo e acréscimo do frete.'); return; }
     if (!settings?.id) { setSettingsMessage('Não foi possível identificar as configurações da loja.'); return; }
     setSettingsSaving(true);
-    const { data, error } = await supabase.from('store_settings').update({ store_name: storeName, whatsapp, minimum_wholesale_quantity: minimum, origin_postal_code:originPostalCode, ...shippingNumbers, melhor_envio_enabled:shippingDraft.melhorEnvioEnabled, correios_enabled:shippingDraft.correiosEnabled })
+    const { data, error } = await supabase.from('store_settings').update({ store_name: storeName, whatsapp, minimum_wholesale_quantity: minimum, session_timeout_minutes:sessionTimeoutMinutes, origin_postal_code:originPostalCode, ...shippingNumbers, melhor_envio_enabled:shippingDraft.melhorEnvioEnabled, correios_enabled:shippingDraft.correiosEnabled })
       .eq('id', settings.id).select('id, store_name, whatsapp, minimum_wholesale_quantity, primary_color, session_timeout_minutes, origin_postal_code, package_weight_grams, packaging_tare_grams, package_height_cm, package_width_cm, package_length_cm, max_items_per_package, shipping_handling_days, shipping_markup_percent, melhor_envio_enabled, correios_enabled').single();
     if (error || !data) {
       setSettingsMessage('Não foi possível salvar a nova regra geral de atacado.'); setSettingsSaving(false); return;
     }
-    setSettings(data); setWholesaleMinimumDraft(String(data.minimum_wholesale_quantity)); setStoreNameDraft(data.store_name); setWhatsappDraft(data.whatsapp);
+    setSettings(data); setWholesaleMinimumDraft(String(data.minimum_wholesale_quantity)); setSessionTimeoutDraft(String(data.session_timeout_minutes)); setStoreNameDraft(data.store_name); setWhatsappDraft(data.whatsapp);
     setShippingDraft({ originPostalCode:data.origin_postal_code ?? '', weightGrams:String(data.package_weight_grams), packagingTareGrams:String(data.packaging_tare_grams), heightCm:String(data.package_height_cm), widthCm:String(data.package_width_cm), lengthCm:String(data.package_length_cm), maxItems:String(data.max_items_per_package), handlingDays:String(data.shipping_handling_days), markup:String(data.shipping_markup_percent), melhorEnvioEnabled:data.melhor_envio_enabled, correiosEnabled:data.correios_enabled });
     setSettingsMessage('Configurações comerciais e logísticas atualizadas com sucesso.'); setSettingsSaving(false);
   }
@@ -667,6 +725,9 @@ export default function AdminApp() {
               <div className="admin-settings-grid"><label>Nome comercial<input value={storeNameDraft} onChange={(e) => setStoreNameDraft(e.target.value)} required/></label>
                 <label><span className="admin-settings-label">WhatsApp <small>País + DDD + número</small></span><input inputMode="numeric" value={whatsappDraft} onChange={(e) => setWhatsappDraft(e.target.value.replace(/\D/g, '').slice(0,15))} placeholder="5562999999999" required/></label>
                 <label>Quantidade mínima geral<input type="number" min="1" step="1" value={wholesaleMinimumDraft} onChange={(e) => setWholesaleMinimumDraft(e.target.value)} required/></label></div>
+              <section className="admin-session-settings"><header><div><p className="admin-eyebrow">SEGURANÇA DO PAINEL</p><h3><LockKeyhole size={18}/> Sessão administrativa</h3><span>Após o encerramento, o administrador deverá informar e-mail e senha novamente.</span></div></header>
+                <label>Encerrar após inatividade (minutos)<input type="number" min="5" max="480" step="1" value={sessionTimeoutDraft} onChange={(e) => setSessionTimeoutDraft(e.target.value)} required/><small>De 5 minutos a 8 horas. Fechar a aba ou o navegador também remove o acesso salvo.</small></label>
+              </section>
               <section className="admin-shipping-settings"><header><div><p className="admin-eyebrow">FRETE AUTOMÁTICO</p><h3>Origem e valores padrão</h3><span>Estes dados serão usados somente quando um produto ainda não possuir peso e dimensões próprias.</span></div></header>
                 <div className="admin-settings-grid shipping"><label>CEP de origem<input inputMode="numeric" maxLength="8" value={shippingDraft.originPostalCode} onChange={(e) => setShippingDraft((current) => ({...current,originPostalCode:e.target.value.replace(/\D/g,'').slice(0,8)}))} placeholder="Somente números"/></label>
                   <label>Peso padrão do produto (g)<input type="number" min="1" step="1" value={shippingDraft.weightGrams} onChange={(e) => setShippingDraft((current) => ({...current,weightGrams:e.target.value}))}/></label>
@@ -705,6 +766,7 @@ export default function AdminApp() {
               })}</div>
             )}
           </section>}
+          {sessionWarningSeconds !== null && <div className="admin-session-warning" role="dialog" aria-modal="true" aria-labelledby="session-warning-title"><div><LockKeyhole size={28}/><h2 id="session-warning-title">Sua sessão está terminando</h2><p>Por segurança, o painel será encerrado por inatividade em <strong>{Math.max(1, Math.ceil(sessionWarningSeconds / 60))} minuto(s)</strong>.</p><button type="button" className="admin-primary-button" onClick={continueAdminSession}>Continuar conectado</button></div></div>}
         </div>
       </div>
 
@@ -808,4 +870,3 @@ export default function AdminApp() {
     </main>
   );
 }
-
