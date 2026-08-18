@@ -1,4 +1,3 @@
-
 const clean = (value) => String(value ?? '').trim();
 const digits = (value) => clean(value).replace(/\D/g, '');
 
@@ -28,7 +27,7 @@ export function isValidTaxId(value) {
 export function validateCustomer(customer) {
   const errors = {};
   if (clean(customer.name).split(/\s+/).length < 2) errors.name = 'Informe nome e sobrenome.';
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean(customer.email))) errors.email = 'Informe um e-mail válido.';
+  if (clean(customer.email) && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean(customer.email))) errors.email = 'Informe um e-mail válido ou deixe o campo vazio.';
   if (!isValidTaxId(customer.taxId)) errors.taxId = 'Informe um CPF ou CNPJ válido.';
   if (!/^\d{10,11}$/.test(digits(customer.phone))) errors.phone = 'Informe DDD e telefone com 10 ou 11 números.';
   if (clean(customer.address).length < 3) errors.address = 'Informe a rua ou avenida.';
@@ -39,6 +38,7 @@ export function validateCustomer(customer) {
   if (!/^\d{8}$/.test(digits(customer.postalCode))) errors.postalCode = 'Informe os 8 números do CEP.';
   if (!['delivery', 'pickup'].includes(customer.fulfillment)) errors.fulfillment = 'Escolha entrega ou retirada.';
   if (!clean(customer.payment)) errors.payment = 'Escolha a forma de pagamento.';
+  if (clean(customer.notes).length < 2) errors.notes = 'Informe uma observação ou escreva “Nenhuma”.';
   return errors;
 }
 
@@ -51,6 +51,6 @@ export function buildWhatsAppMessage({ customer, lines, summary, money }) {
   const fulfillment = customer.fulfillment === 'delivery' ? 'Entrega (frete a combinar)' : 'Retirada (detalhes a combinar)';
   const notes = clean(customer.notes) || 'Nenhuma';
 
-  return `Olá! Quero finalizar meu pedido na CHIQUEHELITA.\n\n*DADOS DO CLIENTE*\nNome completo: ${clean(customer.name)}\nE-mail: ${clean(customer.email)}\nCPF/CNPJ: ${digits(customer.taxId)}\nTelefone: ${digits(customer.phone)}\nEndereço: ${clean(customer.address)}\nQuadra / lote / número: ${clean(customer.addressNumber)}\nBairro/setor: ${clean(customer.district)}\nCidade/UF: ${clean(customer.city)} - ${clean(customer.state).toUpperCase()}\nCEP: ${digits(customer.postalCode)}\nRecebimento: ${fulfillment}\nPagamento: ${clean(customer.payment)}\n\n*ITENS DO PEDIDO*\n${items}\n\n*RESUMO*\nQuantidade: ${summary.totalQuantity} peças\nTotal dos produtos: ${money(summary.total)}\nFrete: a combinar\n\nObservações: ${notes}`;
+  return `Olá! Quero finalizar meu pedido na CHIQUEHELITA.\n\n*DADOS DO CLIENTE*\nNome completo: ${clean(customer.name)}\nE-mail: ${clean(customer.email) || 'Não informado'}\nCPF/CNPJ: ${digits(customer.taxId)}\nTelefone: ${digits(customer.phone)}\nEndereço: ${clean(customer.address)}\nQuadra / lote / número: ${clean(customer.addressNumber)}\nBairro/setor: ${clean(customer.district)}\nCidade/UF: ${clean(customer.city)} - ${clean(customer.state).toUpperCase()}\nCEP: ${digits(customer.postalCode)}\nRecebimento: ${fulfillment}\nPagamento: ${clean(customer.payment)}\n\n*ITENS DO PEDIDO*\n${items}\n\n*RESUMO*\nQuantidade: ${summary.totalQuantity} peças\nTotal dos produtos: ${money(summary.total)}\nFrete: a combinar\n\nObservações: ${notes}`;
 }
 
