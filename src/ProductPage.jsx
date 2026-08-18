@@ -1,5 +1,5 @@
-import React from 'react';
-import { ArrowLeft, Ruler, Search, ShoppingBag } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { ArrowLeft, Ruler, Search, ShoppingBag, X } from 'lucide-react';
 import logo from './assets/Logo.png';
 import ProductGallery from './ProductGallery';
 
@@ -7,6 +7,7 @@ const money = (value) => Number(value ?? 0).toLocaleString('pt-BR', { style: 'cu
 const totalStock = (product) => product.variants.reduce((total, variant) => total + variant.sizes.reduce((sum, size) => sum + size.stock, 0), 0);
 
 export default function ProductPage({ product, selection, settings, cartSummary, cartQuantity, onSelectVariant, onSelectColor, onSelectPrint, onSelectSize, onAdd, onOpenCart, cartDrawer, ruleText }) {
+  const [sizeGuideOpen, setSizeGuideOpen] = useState(false);
   const variant = product.variants.find((item) => item.id === selection.variantId);
   const size = variant?.sizes.find((item) => item.label === selection.size);
   const colors = [...new Set(product.variants.map((item) => item.color))];
@@ -14,6 +15,18 @@ export default function ProductPage({ product, selection, settings, cartSummary,
   const canAdd = Boolean(size?.stock) && cartQuantity < size.stock;
   const productSummary = cartSummary.items.find((item) => item.productId === product.id);
   const homeUrl = import.meta.env.BASE_URL;
+
+  useEffect(() => {
+    if (!sizeGuideOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event) => { if (event.key === 'Escape') setSizeGuideOpen(false); };
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [sizeGuideOpen]);
 
   return <div className="app product-page-app">
     <header className="header product-page-header">
@@ -34,12 +47,18 @@ export default function ProductPage({ product, selection, settings, cartSummary,
           <div className="variant-selector"><span>Estampa: <strong>{selection.printPattern}</strong></span><div>{prints.map((print) => <button key={print} className={selection.printPattern === print ? 'selected' : ''} onClick={() => onSelectPrint(print)}>{print}</button>)}</div></div>
           <div className="sizes product-detail-sizes"><span>Tamanho</span>{(variant?.sizes ?? []).map((item) => <button key={item.label} disabled={item.stock === 0} className={selection.size === item.label ? 'selected' : ''} onClick={() => onSelectSize(item.label)}>{item.label}<small>{item.stock > 0 ? `${item.stock} disp.` : 'Esgotado'}</small></button>)}</div>
           <div className="product-cta-panel"><button className="button full product-add-button" disabled={!canAdd} onClick={onAdd}>{canAdd ? `Adicionar ao carrinho · ${selection.size}` : 'Combinação indisponível'}</button><small>Cor {selection.color} · Estampa {selection.printPattern} · Tamanho {selection.size}</small></div>
-          {product.sizeGuideImage && <a className="size-guide-card" href={product.sizeGuideImage} target="_blank" rel="noreferrer"><Ruler size={20}/><span><strong>Guia de medidas</strong><small>Consulte as medidas antes de escolher</small></span></a>}
+          {product.sizeGuideImage && <button type="button" className="size-guide-card" onClick={() => setSizeGuideOpen(true)}><Ruler size={20}/><span><strong>Guia de medidas</strong><small>Consulte as medidas antes de escolher</small></span></button>}
         </div>
       </article>
     </main>
     <footer><div className="footer-brand"><img src={logo} alt="Chique Helita"/><p>Moda feminina com elegância e personalidade.</p></div><div><h4>Atendimento</h4><p>Segunda a sábado</p><p>WhatsApp da loja</p></div><div><h4>Compra</h4><p>Varejo e atacado</p><p>Mínimo geral: {settings.minimumWholesaleQuantity} peças</p></div></footer>
     {cartDrawer}
+    {sizeGuideOpen && <div className="size-guide-modal" role="dialog" aria-modal="true" aria-labelledby="size-guide-title" onClick={() => setSizeGuideOpen(false)}>
+      <div className="size-guide-modal-content" onClick={(event) => event.stopPropagation()}>
+        <header><div><Ruler size={21}/><div><h2 id="size-guide-title">Guia de medidas</h2><p>Confira as medidas antes de escolher o tamanho.</p></div></div><button type="button" aria-label="Fechar guia de medidas" onClick={() => setSizeGuideOpen(false)} autoFocus><X size={22}/></button></header>
+        <div className="size-guide-image-wrap"><img src={product.sizeGuideImage} alt={`Guia de medidas de ${product.name}`}/></div>
+      </div>
+    </div>}
   </div>;
 }
 
