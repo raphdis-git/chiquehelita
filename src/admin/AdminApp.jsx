@@ -10,6 +10,7 @@ import './admin.css';
 import './admin-orders.css';
 import './admin-orders-dashboard.css';
 import './admin-clients.css';
+import './admin-catalog.css';
 
 const SIZE_LABELS = ['PP', 'P', 'M', 'G', 'GG'];
 const OPTION_LABELS = { category: 'categoria', color: 'cor', print: 'estampa' };
@@ -117,7 +118,7 @@ export default function AdminApp() {
         )
       `).order('created_at', { ascending: false }),
       supabase.from('store_settings').select('id, store_name, minimum_wholesale_quantity, primary_color, session_timeout_minutes').limit(1).maybeSingle(),
-      supabase.from('catalog_options').select('id, option_type, name, active').eq('active', true).order('name'),
+      supabase.from('catalog_options').select('id, option_type, name, active').order('name'),
       supabase.from('orders').select('*, order_items(*)').order('created_at', { ascending: false }),
     ]);
     if (productsResult.error || settingsResult.error || optionsResult.error || ordersResult.error) {
@@ -268,6 +269,13 @@ export default function AdminApp() {
     if (optionModal.type === 'color') updateVariant(optionModal.variantIndex, 'color', data.name);
     if (optionModal.type === 'print') updateVariant(optionModal.variantIndex, 'printPattern', data.name);
     setOptionSaving(false); setOptionModal(null); setNewOptionName(''); setOptionMessage('');
+  }
+
+  async function toggleCatalogOption(option) {
+    const { error } = await supabase.from('catalog_options').update({ active: !option.active, updated_at: new Date().toISOString() }).eq('id', option.id);
+    if (error) { setMessage('Não foi possível alterar esta opção.'); return; }
+    setCatalogOptions((current) => current.map((item) => item.id === option.id ? { ...item, active: !item.active } : item));
+    setMessage(`${option.name} ${option.active ? 'desativada' : 'ativada'} com sucesso.`);
   }
 
   async function handleSaveSettings(event) {
@@ -557,7 +565,7 @@ export default function AdminApp() {
     ['dashboard', <Home size={18}/>, 'Dashboard'],
     ['orders', <ShoppingBag size={18}/>, 'Pedidos'],
     ['products', <Boxes size={18}/>, 'Produtos'],
-    ['categories', <Tags size={18}/>, 'Categorias', true],
+    ['categories', <Tags size={18}/>, 'Catálogo'],
     ['clients', <Users size={18}/>, 'Clientes'],
     ['settings', <Settings size={18}/>, 'Configurações'],
   ];
@@ -576,7 +584,7 @@ export default function AdminApp() {
 
       <div className="admin-main-area">
         <header className="admin-topbar">
-          <div><p className="admin-eyebrow">CHIQUE HELITA</p><h1>{adminSection === 'products' ? 'Produtos' : adminSection === 'orders' ? 'Pedidos' : adminSection === 'clients' ? 'Clientes' : adminSection === 'settings' ? 'Configurações' : 'Dashboard'}</h1></div>
+          <div><p className="admin-eyebrow">CHIQUE HELITA</p><h1>{adminSection === 'products' ? 'Produtos' : adminSection === 'orders' ? 'Pedidos' : adminSection === 'clients' ? 'Clientes' : adminSection === 'categories' ? 'Opções do catálogo' : adminSection === 'settings' ? 'Configurações' : 'Dashboard'}</h1></div>
           <div className="admin-header-actions">
             <button className="admin-topbar-button" onClick={loadDashboard} disabled={dashboardLoading}><RefreshCw size={17} className={dashboardLoading ? 'admin-spin-icon' : ''}/>Atualizar</button>
             {adminSection === 'products' && <button className="admin-primary-button" type="button" onClick={openNewProduct}><Plus size={17}/>Novo produto</button>}
@@ -614,6 +622,11 @@ export default function AdminApp() {
             <div className="admin-panel-heading"><div><p className="admin-eyebrow">RELACIONAMENTO</p><h2>Clientes</h2><p>Visão consolidada a partir dos pedidos não cancelados.</p></div></div>
             <div className="admin-client-search"><label>Buscar cliente<input value={clientSearch} onChange={(event) => setClientSearch(event.target.value)} placeholder="Nome, e-mail, CPF/CNPJ, telefone ou cidade"/></label><span>{clients.length} clientes encontrados</span></div>
             {clients.length === 0 ? <div className="admin-empty-state">Nenhum cliente corresponde à busca.</div> : <div className="admin-client-grid">{clients.map((client) => <article className="admin-client-card" key={client.taxId}><header><div className="admin-client-avatar">{client.name.split(/\s+/).slice(0,2).map((part) => part[0]).join('').toUpperCase()}</div><div><h3>{client.name}</h3><span>{client.city}/{client.state}</span></div></header><div className="admin-client-contact"><p>{client.email}</p><p>{client.phone}</p><p>CPF/CNPJ: {client.taxId}</p></div><div className="admin-client-stats"><div><span>Pedidos</span><strong>{client.orders}</strong></div><div><span>Total comprado</span><strong>{money(client.total)}</strong></div></div><footer>Última compra: {new Date(client.lastOrder).toLocaleDateString('pt-BR')}</footer></article>)}</div>}
+          </section>}
+
+          {adminSection === 'categories' && <section className="admin-panel">
+            <div className="admin-panel-heading"><div><p className="admin-eyebrow">ORGANIZAÇÃO</p><h2>Categorias, cores e estampas</h2><p>Centralize as opções disponíveis no cadastro dos produtos.</p></div></div>
+            <div className="admin-catalog-columns">{[['category','Categorias'],['color','Cores'],['print','Estampas']].map(([type,title]) => <article key={type}><header><div><h3>{title}</h3><span>{catalogOptions.filter((item) => item.option_type === type && item.active).length} ativas</span></div><button className="admin-primary-button" type="button" onClick={() => openOptionModal(type)}><Plus size={15}/>Adicionar</button></header><div>{catalogOptions.filter((item) => item.option_type === type).map((option) => <div className={`admin-catalog-option ${option.active ? '' : 'inactive'}`} key={option.id}><span>{option.name}</span><button type="button" onClick={() => toggleCatalogOption(option)}>{option.active ? 'Desativar' : 'Ativar'}</button></div>)}</div></article>)}</div>
           </section>}
 
           {adminSection === 'settings' && <section className="admin-panel admin-settings-panel">
