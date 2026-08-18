@@ -8,6 +8,7 @@ import logo from '../assets/Logo.png';
 import { supabase } from '../lib/supabase';
 import './admin.css';
 import './admin-orders.css';
+import './admin-orders-dashboard.css';
 
 const SIZE_LABELS = ['PP', 'P', 'M', 'G', 'GG'];
 const OPTION_LABELS = { category: 'categoria', color: 'cor', print: 'estampa' };
@@ -75,6 +76,8 @@ export default function AdminApp() {
   const [products, setProducts] = useState([]);
   const [orders, setOrders] = useState([]);
   const [orderSaving, setOrderSaving] = useState('');
+  const [orderSearch, setOrderSearch] = useState('');
+  const [orderStatusFilter, setOrderStatusFilter] = useState('all');
   const [settings, setSettings] = useState(null);
   const [catalogOptions, setCatalogOptions] = useState([]);
   const [adminSection, setAdminSection] = useState('dashboard');
@@ -477,6 +480,25 @@ export default function AdminApp() {
     newOrders: orders.filter((order) => order.status === 'new').length,
   }), [products, orders]);
 
+  const filteredOrders = useMemo(() => {
+    const term = orderSearch.trim().toLocaleLowerCase('pt-BR');
+    return orders.filter((order) => {
+      const matchesStatus = orderStatusFilter === 'all' || order.status === orderStatusFilter;
+      const searchable = [order.order_number, order.customer_name, order.customer_email, order.customer_tax_id, order.customer_phone, order.city].join(' ').toLocaleLowerCase('pt-BR');
+      return matchesStatus && (!term || searchable.includes(term));
+    });
+  }, [orders, orderSearch, orderStatusFilter]);
+  const orderMetrics = useMemo(() => {
+    const valid = orders.filter((order) => order.status !== 'cancelled');
+    const completed = orders.filter((order) => order.status === 'completed');
+    return {
+      total: orders.length,
+      open: orders.filter((order) => !['completed', 'cancelled'].includes(order.status)).length,
+      completedRevenue: completed.reduce((sum, order) => sum + Number(order.total_amount), 0),
+      averageTicket: valid.length ? valid.reduce((sum, order) => sum + Number(order.total_amount), 0) / valid.length : 0,
+    };
+  }, [orders]);
+
   const productTotalStock = useMemo(() => productForm.variants.reduce(
     (sum, variant) => sum + SIZE_LABELS.reduce((subtotal, size) => subtotal + (Number(variant.stock[size]) || 0), 0), 0,
   ), [productForm.variants]);
@@ -563,7 +585,9 @@ export default function AdminApp() {
 
           {adminSection === 'orders' && <section className="admin-panel">
             <div className="admin-panel-heading"><div><p className="admin-eyebrow">ATENDIMENTO</p><h2>Pedidos recebidos</h2><p>Consulte o cadastro, os itens e acompanhe cada etapa do pedido.</p></div></div>
-            {dashboardLoading ? <div className="admin-inline-loading"><div className="admin-spinner"/><span>Atualizando pedidos...</span></div> : orders.length === 0 ? <div className="admin-empty-state">Nenhum pedido recebido até o momento.</div> : <div className="admin-order-list">{orders.map((order) => <article className="admin-order-card" key={order.id}>
+            <div className="admin-order-metrics"><article><span>Total de pedidos</span><strong>{orderMetrics.total}</strong></article><article><span>Em andamento</span><strong>{orderMetrics.open}</strong></article><article><span>Faturamento concluído</span><strong>{money(orderMetrics.completedRevenue)}</strong></article><article><span>Ticket médio</span><strong>{money(orderMetrics.averageTicket)}</strong></article></div>
+            <div className="admin-order-filters"><label>Buscar pedido<input value={orderSearch} onChange={(event) => setOrderSearch(event.target.value)} placeholder="Nome, nº, CPF/CNPJ, telefone ou cidade"/></label><label>Status<select value={orderStatusFilter} onChange={(event) => setOrderStatusFilter(event.target.value)}><option value="all">Todos os status</option>{Object.entries(ORDER_STATUSES).map(([value,label]) => <option value={value} key={value}>{label}</option>)}</select></label><span>{filteredOrders.length} de {orders.length} pedidos</span></div>
+            {dashboardLoading ? <div className="admin-inline-loading"><div className="admin-spinner"/><span>Atualizando pedidos...</span></div> : orders.length === 0 ? <div className="admin-empty-state">Nenhum pedido recebido até o momento.</div> : filteredOrders.length === 0 ? <div className="admin-empty-state">Nenhum pedido corresponde aos filtros.</div> : <div className="admin-order-list">{filteredOrders.map((order) => <article className="admin-order-card" key={order.id}>
               <header><div><span className={`admin-order-status status-${order.status}`}>{ORDER_STATUSES[order.status]}</span><h3>Pedido #{order.order_number}</h3><small>{new Date(order.created_at).toLocaleString('pt-BR')}</small></div><strong>{money(order.total_amount)}</strong></header>
               <div className="admin-order-columns"><div><h4>Cliente</h4><p><strong>{order.customer_name}</strong></p><p>{order.customer_email}</p><p>{order.customer_phone}</p><p>CPF/CNPJ: {order.customer_tax_id}</p></div><div><h4>Entrega</h4><p>{order.address}, {order.address_number}</p><p>{order.district} · {order.city}/{order.state}</p><p>CEP {order.postal_code}</p><p>{order.fulfillment === 'delivery' ? 'Entrega' : 'Retirada'} · {order.payment_method}</p></div></div>
               <div className="admin-order-items">{(order.order_items ?? []).map((item) => <div key={item.id}><span>{item.quantity}x {item.product_name}<small>{item.color} · {item.print_pattern} · Tam. {item.size}</small></span><strong>{money(item.subtotal)}</strong></div>)}</div>
