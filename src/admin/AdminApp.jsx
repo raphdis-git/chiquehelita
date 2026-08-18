@@ -9,6 +9,7 @@ import { supabase } from '../lib/supabase';
 import './admin.css';
 import './admin-orders.css';
 import './admin-orders-dashboard.css';
+import './admin-clients.css';
 
 const SIZE_LABELS = ['PP', 'P', 'M', 'G', 'GG'];
 const OPTION_LABELS = { category: 'categoria', color: 'cor', print: 'estampa' };
@@ -78,6 +79,7 @@ export default function AdminApp() {
   const [orderSaving, setOrderSaving] = useState('');
   const [orderSearch, setOrderSearch] = useState('');
   const [orderStatusFilter, setOrderStatusFilter] = useState('all');
+  const [clientSearch, setClientSearch] = useState('');
   const [settings, setSettings] = useState(null);
   const [catalogOptions, setCatalogOptions] = useState([]);
   const [adminSection, setAdminSection] = useState('dashboard');
@@ -498,6 +500,18 @@ export default function AdminApp() {
       averageTicket: valid.length ? valid.reduce((sum, order) => sum + Number(order.total_amount), 0) / valid.length : 0,
     };
   }, [orders]);
+  const clients = useMemo(() => {
+    const grouped = new Map();
+    orders.filter((order) => order.status !== 'cancelled').forEach((order) => {
+      const key = order.customer_tax_id;
+      const current = grouped.get(key) ?? { taxId:key, name:order.customer_name, email:order.customer_email, phone:order.customer_phone, city:order.city, state:order.state, orders:0, total:0, lastOrder:order.created_at };
+      current.orders += 1; current.total += Number(order.total_amount);
+      if (new Date(order.created_at) > new Date(current.lastOrder)) { current.lastOrder = order.created_at; current.name = order.customer_name; current.email = order.customer_email; current.phone = order.customer_phone; current.city = order.city; current.state = order.state; }
+      grouped.set(key, current);
+    });
+    const term = clientSearch.trim().toLocaleLowerCase('pt-BR');
+    return [...grouped.values()].filter((client) => !term || [client.name,client.email,client.phone,client.taxId,client.city].join(' ').toLocaleLowerCase('pt-BR').includes(term)).sort((a,b) => new Date(b.lastOrder) - new Date(a.lastOrder));
+  }, [orders, clientSearch]);
 
   const productTotalStock = useMemo(() => productForm.variants.reduce(
     (sum, variant) => sum + SIZE_LABELS.reduce((subtotal, size) => subtotal + (Number(variant.stock[size]) || 0), 0), 0,
@@ -544,7 +558,7 @@ export default function AdminApp() {
     ['orders', <ShoppingBag size={18}/>, 'Pedidos'],
     ['products', <Boxes size={18}/>, 'Produtos'],
     ['categories', <Tags size={18}/>, 'Categorias', true],
-    ['clients', <Users size={18}/>, 'Clientes', true],
+    ['clients', <Users size={18}/>, 'Clientes'],
     ['settings', <Settings size={18}/>, 'Configurações'],
   ];
 
@@ -562,7 +576,7 @@ export default function AdminApp() {
 
       <div className="admin-main-area">
         <header className="admin-topbar">
-          <div><p className="admin-eyebrow">CHIQUE HELITA</p><h1>{adminSection === 'products' ? 'Produtos' : adminSection === 'orders' ? 'Pedidos' : adminSection === 'settings' ? 'Configurações' : 'Dashboard'}</h1></div>
+          <div><p className="admin-eyebrow">CHIQUE HELITA</p><h1>{adminSection === 'products' ? 'Produtos' : adminSection === 'orders' ? 'Pedidos' : adminSection === 'clients' ? 'Clientes' : adminSection === 'settings' ? 'Configurações' : 'Dashboard'}</h1></div>
           <div className="admin-header-actions">
             <button className="admin-topbar-button" onClick={loadDashboard} disabled={dashboardLoading}><RefreshCw size={17} className={dashboardLoading ? 'admin-spin-icon' : ''}/>Atualizar</button>
             {adminSection === 'products' && <button className="admin-primary-button" type="button" onClick={openNewProduct}><Plus size={17}/>Novo produto</button>}
@@ -594,6 +608,12 @@ export default function AdminApp() {
               {order.notes && <p className="admin-order-notes"><strong>Observações:</strong> {order.notes}</p>}
               <footer><span>{order.total_quantity} peças</span><label>Status<select value={order.status} disabled={orderSaving === order.id} onChange={(event) => updateOrderStatus(order.id, event.target.value)}>{Object.entries(ORDER_STATUSES).map(([value,label]) => <option value={value} key={value}>{label}</option>)}</select></label></footer>
             </article>)}</div>}
+          </section>}
+
+          {adminSection === 'clients' && <section className="admin-panel">
+            <div className="admin-panel-heading"><div><p className="admin-eyebrow">RELACIONAMENTO</p><h2>Clientes</h2><p>Visão consolidada a partir dos pedidos não cancelados.</p></div></div>
+            <div className="admin-client-search"><label>Buscar cliente<input value={clientSearch} onChange={(event) => setClientSearch(event.target.value)} placeholder="Nome, e-mail, CPF/CNPJ, telefone ou cidade"/></label><span>{clients.length} clientes encontrados</span></div>
+            {clients.length === 0 ? <div className="admin-empty-state">Nenhum cliente corresponde à busca.</div> : <div className="admin-client-grid">{clients.map((client) => <article className="admin-client-card" key={client.taxId}><header><div className="admin-client-avatar">{client.name.split(/\s+/).slice(0,2).map((part) => part[0]).join('').toUpperCase()}</div><div><h3>{client.name}</h3><span>{client.city}/{client.state}</span></div></header><div className="admin-client-contact"><p>{client.email}</p><p>{client.phone}</p><p>CPF/CNPJ: {client.taxId}</p></div><div className="admin-client-stats"><div><span>Pedidos</span><strong>{client.orders}</strong></div><div><span>Total comprado</span><strong>{money(client.total)}</strong></div></div><footer>Última compra: {new Date(client.lastOrder).toLocaleDateString('pt-BR')}</footer></article>)}</div>}
           </section>}
 
           {adminSection === 'settings' && <section className="admin-panel admin-settings-panel">
