@@ -95,6 +95,8 @@ export default function AdminApp() {
   const [optionSaving, setOptionSaving] = useState(false);
   const [optionMessage, setOptionMessage] = useState('');
   const [wholesaleMinimumDraft, setWholesaleMinimumDraft] = useState('6');
+  const [storeNameDraft, setStoreNameDraft] = useState('CHIQUEHELITA');
+  const [whatsappDraft, setWhatsappDraft] = useState('');
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsMessage, setSettingsMessage] = useState('');
   const [uploadingImages, setUploadingImages] = useState({});
@@ -117,7 +119,7 @@ export default function AdminApp() {
           product_variant_images (id, image_url, sort_order, is_primary)
         )
       `).order('created_at', { ascending: false }),
-      supabase.from('store_settings').select('id, store_name, minimum_wholesale_quantity, primary_color, session_timeout_minutes').limit(1).maybeSingle(),
+      supabase.from('store_settings').select('id, store_name, whatsapp, minimum_wholesale_quantity, primary_color, session_timeout_minutes').limit(1).maybeSingle(),
       supabase.from('catalog_options').select('id, option_type, name, active').order('name'),
       supabase.from('orders').select('*, order_items(*)').order('created_at', { ascending: false }),
     ]);
@@ -137,6 +139,8 @@ export default function AdminApp() {
     setProducts(normalized);
     setSettings(settingsResult.data ?? null);
     setWholesaleMinimumDraft(String(settingsResult.data?.minimum_wholesale_quantity ?? 6));
+    setStoreNameDraft(settingsResult.data?.store_name ?? 'CHIQUEHELITA');
+    setWhatsappDraft(settingsResult.data?.whatsapp ?? '');
     setCatalogOptions(optionsResult.data ?? []);
     setOrders(ordersResult.data ?? []);
     setDashboardLoading(false);
@@ -281,19 +285,23 @@ export default function AdminApp() {
   async function handleSaveSettings(event) {
     event.preventDefault();
     const minimum = Number(wholesaleMinimumDraft);
+    const storeName = storeNameDraft.trim();
+    const whatsapp = whatsappDraft.replace(/\D/g, '');
     setSettingsMessage('');
     if (!Number.isInteger(minimum) || minimum < 1) {
       setSettingsMessage('Informe uma quantidade mínima válida, com pelo menos 1 peça.'); return;
     }
+    if (storeName.length < 2) { setSettingsMessage('Informe o nome comercial da loja.'); return; }
+    if (!/^\d{10,15}$/.test(whatsapp)) { setSettingsMessage('Informe o WhatsApp com código do país e DDD, somente números.'); return; }
     if (!settings?.id) { setSettingsMessage('Não foi possível identificar as configurações da loja.'); return; }
     setSettingsSaving(true);
-    const { data, error } = await supabase.from('store_settings').update({ minimum_wholesale_quantity: minimum })
-      .eq('id', settings.id).select('id, store_name, minimum_wholesale_quantity, primary_color, session_timeout_minutes').single();
+    const { data, error } = await supabase.from('store_settings').update({ store_name: storeName, whatsapp, minimum_wholesale_quantity: minimum })
+      .eq('id', settings.id).select('id, store_name, whatsapp, minimum_wholesale_quantity, primary_color, session_timeout_minutes').single();
     if (error || !data) {
       setSettingsMessage('Não foi possível salvar a nova regra geral de atacado.'); setSettingsSaving(false); return;
     }
-    setSettings(data); setWholesaleMinimumDraft(String(data.minimum_wholesale_quantity));
-    setSettingsMessage('Regra geral de atacado atualizada com sucesso.'); setSettingsSaving(false);
+    setSettings(data); setWholesaleMinimumDraft(String(data.minimum_wholesale_quantity)); setStoreNameDraft(data.store_name); setWhatsappDraft(data.whatsapp);
+    setSettingsMessage('Configurações comerciais atualizadas com sucesso.'); setSettingsSaving(false);
   }
 
   async function uploadFile(file, uploadKey) {
@@ -630,10 +638,12 @@ export default function AdminApp() {
           </section>}
 
           {adminSection === 'settings' && <section className="admin-panel admin-settings-panel">
-            <div className="admin-settings-heading"><div><p className="admin-eyebrow">REGRA DE ATACADO</p><h2><Settings size={21}/> Quantidade mínima geral</h2><p>Produtos com “Usar regra geral” passam automaticamente para o preço de atacado ao atingir esta quantidade no carrinho.</p></div></div>
+            <div className="admin-settings-heading"><div><p className="admin-eyebrow">DADOS COMERCIAIS</p><h2><Settings size={21}/> Configurações da loja</h2><p>Atualize o contato usado no checkout e a regra geral de atacado.</p></div></div>
             <form className="admin-settings-form" onSubmit={handleSaveSettings}>
+              <label>Nome comercial<input value={storeNameDraft} onChange={(e) => setStoreNameDraft(e.target.value)} required/></label>
+              <label>WhatsApp <small>País + DDD + número</small><input inputMode="numeric" value={whatsappDraft} onChange={(e) => setWhatsappDraft(e.target.value.replace(/\D/g, '').slice(0,15))} placeholder="5562999999999" required/></label>
               <label>Quantidade mínima geral<input type="number" min="1" step="1" value={wholesaleMinimumDraft} onChange={(e) => setWholesaleMinimumDraft(e.target.value)} required/></label>
-              <button type="submit" className="admin-primary-button" disabled={settingsSaving}><Save size={17}/>{settingsSaving ? 'Salvando...' : 'Salvar regra geral'}</button>
+              <button type="submit" className="admin-primary-button" disabled={settingsSaving}><Save size={17}/>{settingsSaving ? 'Salvando...' : 'Salvar configurações'}</button>
             </form>
             {settingsMessage && <p className={settingsMessage.includes('sucesso') ? 'admin-success-message' : 'admin-message'}>{settingsMessage}</p>}
           </section>}
