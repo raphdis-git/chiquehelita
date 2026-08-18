@@ -7,11 +7,13 @@ import {
 import logo from '../assets/Logo.png';
 import { supabase } from '../lib/supabase';
 import './admin.css';
+import './admin-orders.css';
 
 const SIZE_LABELS = ['PP', 'P', 'M', 'G', 'GG'];
 const OPTION_LABELS = { category: 'categoria', color: 'cor', print: 'estampa' };
 const IMAGE_BUCKET = 'product-images';
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+const ORDER_STATUSES = { new: 'Novo', contacted: 'Contatado', confirmed: 'Confirmado', preparing: 'Em preparação', shipped: 'Enviado', completed: 'Concluído', cancelled: 'Cancelado' };
 
 function money(value) {
   return Number(value ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -71,6 +73,8 @@ export default function AdminApp() {
   const [password, setPassword] = useState('');
   const [message, setMessage] = useState('');
   const [products, setProducts] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [orderSaving, setOrderSaving] = useState('');
   const [settings, setSettings] = useState(null);
   const [catalogOptions, setCatalogOptions] = useState([]);
   const [adminSection, setAdminSection] = useState('dashboard');
@@ -97,7 +101,7 @@ export default function AdminApp() {
 
   async function loadDashboard() {
     setDashboardLoading(true);
-    const [productsResult, settingsResult, optionsResult] = await Promise.all([
+    const [productsResult, settingsResult, optionsResult, ordersResult] = await Promise.all([
       supabase.from('products').select(`
         id, slug, name, category, description, price, promotional_price, wholesale_price,
         wholesale_rule_mode, wholesale_minimum_quantity, image_url, size_guide_image_url, featured, active,
@@ -109,8 +113,9 @@ export default function AdminApp() {
       `).order('created_at', { ascending: false }),
       supabase.from('store_settings').select('id, store_name, minimum_wholesale_quantity, primary_color, session_timeout_minutes').limit(1).maybeSingle(),
       supabase.from('catalog_options').select('id, option_type, name, active').eq('active', true).order('name'),
+      supabase.from('orders').select('*, order_items(*)').order('created_at', { ascending: false }),
     ]);
-    if (productsResult.error || settingsResult.error || optionsResult.error) {
+    if (productsResult.error || settingsResult.error || optionsResult.error || ordersResult.error) {
       setMessage('Não foi possível carregar os dados do painel.');
       setDashboardLoading(false);
       return;
@@ -127,6 +132,7 @@ export default function AdminApp() {
     setSettings(settingsResult.data ?? null);
     setWholesaleMinimumDraft(String(settingsResult.data?.minimum_wholesale_quantity ?? 6));
     setCatalogOptions(optionsResult.data ?? []);
+    setOrders(ordersResult.data ?? []);
     setDashboardLoading(false);
   }
 
@@ -153,7 +159,15 @@ export default function AdminApp() {
   }
   async function handleLogout() {
     await supabase.auth.signOut();
-    setSession(null); setIsAdmin(false); setProducts([]); setSettings(null); setCatalogOptions([]);
+    setSession(null); setIsAdmin(false); setProducts([]); setOrders([]); setSettings(null); setCatalogOptions([]);
+  }
+
+  async function updateOrderStatus(orderId, status) {
+    setOrderSaving(orderId); setMessage('');
+    const { error } = await supabase.from('orders').update({ status, updated_at: new Date().toISOString() }).eq('id', orderId);
+    if (error) setMessage('Não foi possível atualizar o pedido.');
+    else setOrders((current) => current.map((order) => order.id === orderId ? { ...order, status } : order));
+    setOrderSaving('');
   }
 
   function openNewProduct() {
@@ -460,7 +474,8 @@ export default function AdminApp() {
     totalProducts: products.length,
     activeProducts: products.filter((p) => p.active).length,
     totalStock: products.reduce((sum, p) => sum + p.product_variants.reduce((vs, v) => vs + v.product_variant_stock.reduce((ss, item) => ss + item.stock, 0), 0), 0),
-  }), [products]);
+    newOrders: orders.filter((order) => order.status === 'new').length,
+  }), [products, orders]);
 
   const productTotalStock = useMemo(() => productForm.variants.reduce(
     (sum, variant) => sum + SIZE_LABELS.reduce((subtotal, size) => subtotal + (Number(variant.stock[size]) || 0), 0), 0,
@@ -504,7 +519,7 @@ export default function AdminApp() {
 
   const sidebarItems = [
     ['dashboard', <Home size={18}/>, 'Dashboard'],
-    ['orders', <ShoppingBag size={18}/>, 'Pedidos', true],
+    ['orders', <ShoppingBag size={18}/>, 'Pedidos'],
     ['products', <Boxes size={18}/>, 'Produtos'],
     ['categories', <Tags size={18}/>, 'Categorias', true],
     ['clients', <Users size={18}/>, 'Clientes', true],
@@ -525,7 +540,7 @@ export default function AdminApp() {
 
       <div className="admin-main-area">
         <header className="admin-topbar">
-          <div><p className="admin-eyebrow">CHIQUE HELITA</p><h1>{adminSection === 'products' ? 'Produtos' : adminSection === 'settings' ? 'Configurações' : 'Dashboard'}</h1></div>
+          <div><p className="admin-eyebrow">CHIQUE HELITA</p><h1>{adminSection === 'products' ? 'Produtos' : adminSection === 'orders' ? 'Pedidos' : adminSection === 'settings' ? 'Configurações' : 'Dashboard'}</h1></div>
           <div className="admin-header-actions">
             <button className="admin-topbar-button" onClick={loadDashboard} disabled={dashboardLoading}><RefreshCw size={17} className={dashboardLoading ? 'admin-spin-icon' : ''}/>Atualizar</button>
             {adminSection === 'products' && <button className="admin-primary-button" type="button" onClick={openNewProduct}><Plus size={17}/>Novo produto</button>}
@@ -538,13 +553,24 @@ export default function AdminApp() {
           {adminSection === 'dashboard' && <>
             <section className="admin-welcome"><ShieldCheck size={32}/><div><p className="admin-eyebrow">VISÃO GERAL</p><h2>Bem-vindo ao painel</h2><p>Gerencie produtos, estoque e regras comerciais em um só lugar.</p></div></section>
             <section className="admin-metrics">
-              <article><ShoppingBag size={22}/><span>Produtos cadastrados</span><strong>{metrics.totalProducts}</strong></article>
+              <article><ShoppingBag size={22}/><span>Pedidos novos</span><strong>{metrics.newOrders}</strong></article>
               <article><PackageCheck size={22}/><span>Produtos ativos</span><strong>{metrics.activeProducts}</strong></article>
               <article><Boxes size={22}/><span>Peças em estoque</span><strong>{metrics.totalStock}</strong></article>
               <article><CircleDollarSign size={22}/><span>Mínimo atacado geral</span><strong>{generalMinimum}</strong></article>
             </section>
             <section className="admin-panel"><div className="admin-panel-heading"><div><p className="admin-eyebrow">ATALHO</p><h2>Catálogo</h2><p>Acesse os produtos para cadastrar, editar fotos e atualizar o estoque.</p></div><button className="admin-primary-button" onClick={() => setAdminSection('products')}>Abrir produtos</button></div></section>
           </>}
+
+          {adminSection === 'orders' && <section className="admin-panel">
+            <div className="admin-panel-heading"><div><p className="admin-eyebrow">ATENDIMENTO</p><h2>Pedidos recebidos</h2><p>Consulte o cadastro, os itens e acompanhe cada etapa do pedido.</p></div></div>
+            {dashboardLoading ? <div className="admin-inline-loading"><div className="admin-spinner"/><span>Atualizando pedidos...</span></div> : orders.length === 0 ? <div className="admin-empty-state">Nenhum pedido recebido até o momento.</div> : <div className="admin-order-list">{orders.map((order) => <article className="admin-order-card" key={order.id}>
+              <header><div><span className={`admin-order-status status-${order.status}`}>{ORDER_STATUSES[order.status]}</span><h3>Pedido #{order.order_number}</h3><small>{new Date(order.created_at).toLocaleString('pt-BR')}</small></div><strong>{money(order.total_amount)}</strong></header>
+              <div className="admin-order-columns"><div><h4>Cliente</h4><p><strong>{order.customer_name}</strong></p><p>{order.customer_email}</p><p>{order.customer_phone}</p><p>CPF/CNPJ: {order.customer_tax_id}</p></div><div><h4>Entrega</h4><p>{order.address}, {order.address_number}</p><p>{order.district} · {order.city}/{order.state}</p><p>CEP {order.postal_code}</p><p>{order.fulfillment === 'delivery' ? 'Entrega' : 'Retirada'} · {order.payment_method}</p></div></div>
+              <div className="admin-order-items">{(order.order_items ?? []).map((item) => <div key={item.id}><span>{item.quantity}x {item.product_name}<small>{item.color} · {item.print_pattern} · Tam. {item.size}</small></span><strong>{money(item.subtotal)}</strong></div>)}</div>
+              {order.notes && <p className="admin-order-notes"><strong>Observações:</strong> {order.notes}</p>}
+              <footer><span>{order.total_quantity} peças</span><label>Status<select value={order.status} disabled={orderSaving === order.id} onChange={(event) => updateOrderStatus(order.id, event.target.value)}>{Object.entries(ORDER_STATUSES).map(([value,label]) => <option value={value} key={value}>{label}</option>)}</select></label></footer>
+            </article>)}</div>}
+          </section>}
 
           {adminSection === 'settings' && <section className="admin-panel admin-settings-panel">
             <div className="admin-settings-heading"><div><p className="admin-eyebrow">REGRA DE ATACADO</p><h2><Settings size={21}/> Quantidade mínima geral</h2><p>Produtos com “Usar regra geral” passam automaticamente para o preço de atacado ao atingir esta quantidade no carrinho.</p></div></div>
@@ -676,3 +702,4 @@ export default function AdminApp() {
     </main>
   );
 }
+
