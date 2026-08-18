@@ -1,0 +1,17 @@
+.launches-carousel{position:relative}
+.launches-row{scroll-snap-type:x mandatory;scrollbar-width:none}
+.launches-row::-webkit-scrollbar{display:none}
+.launch-card{flex:0 0 calc((100% - 48px)/4);min-width:0;scroll-snap-align:start}
+.launch-arrow{position:absolute;z-index:2;top:42%;width:40px;height:40px;border:1px solid #f5b6d8;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.94);color:var(--primary);box-shadow:0 5px 18px rgba(110,15,67,.14);cursor:pointer}
+.launch-arrow:hover{background:var(--primary);color:#fff}
+.launch-arrow.previous{left:-20px}
+.launch-arrow.next{right:-20px}
+
+@media(max-width:760px){
+  .launch-card{flex-basis:calc((100% - 12px)/2)}
+  .launches-row{gap:12px}
+  .launch-arrow{width:34px;height:34px}
+  .launch-arrow.previous{left:-13px}
+  .launch-arrow.next{right:-13px}
+}
+

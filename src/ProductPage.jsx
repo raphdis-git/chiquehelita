@@ -18,11 +18,11 @@ export default function ProductPage({ product, selection, settings, cartSummary,
   return <div className="app product-page-app">
     <header className="header product-page-header">
       <a className="brand-logo" href={homeUrl} aria-label="Ir para a página inicial"><img src={logo} alt="Chique Helita"/></a>
-      <nav><a href={homeUrl}>Início</a><a href={`${homeUrl}#catalogo`}>Vestidos</a><a href={`${homeUrl}#promocoes`}>Promoções</a><a href={`${homeUrl}#sobre`}>Sobre nós</a></nav>
-      <div className="actions"><a className="icon" href={`${homeUrl}#catalogo`} aria-label="Buscar produtos"><Search size={20}/></a><button className="icon cart-button" onClick={onOpenCart} aria-label="Abrir carrinho"><ShoppingBag size={21}/>{cartSummary.totalQuantity > 0 && <span>{cartSummary.totalQuantity}</span>}</button></div>
+      <nav><a href={homeUrl}>Início</a><a href={`${homeUrl}#novidades`}>Vestidos</a><a href={`${homeUrl}#promocoes`}>Promoções</a><a href={`${homeUrl}#sobre`}>Sobre nós</a></nav>
+      <div className="actions"><a className="icon" href={`${homeUrl}#novidades`} aria-label="Buscar produtos"><Search size={20}/></a><button className="icon cart-button" onClick={onOpenCart} aria-label="Abrir carrinho"><ShoppingBag size={21}/>{cartSummary.totalQuantity > 0 && <span>{cartSummary.totalQuantity}</span>}</button></div>
     </header>
     <main className="product-page-main">
-      <div className="product-navigation"><a className="back-link" href={homeUrl}><ArrowLeft size={17}/> Voltar</a><nav className="breadcrumb" aria-label="Navegação estrutural"><a href={homeUrl}>Início</a><span>/</span><a href={`${homeUrl}#catalogo`}>{product.category}</a><span>/</span><strong>{product.name}</strong></nav></div>
+      <div className="product-navigation"><a className="back-link" href={homeUrl}><ArrowLeft size={17}/> Voltar</a><nav className="breadcrumb" aria-label="Navegação estrutural"><a href={homeUrl}>Início</a><span>/</span><a href={`${homeUrl}#novidades`}>{product.category}</a><span>/</span><strong>{product.name}</strong></nav></div>
       <article className="product-detail">
         <ProductGallery product={product} selectedVariantId={selection.variantId} onSelectVariant={onSelectVariant}/>
         <div className="product-detail-info">
@@ -42,3 +42,4 @@ export default function ProductPage({ product, selection, settings, cartSummary,
     {cartDrawer}
   </div>;
 }
+
