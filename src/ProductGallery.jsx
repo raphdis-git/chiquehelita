@@ -73,7 +73,6 @@ export default function ProductGallery({ product, selectedVariantId, onSelectVar
     {gallery.length > 1 && <div className="gallery-thumbnails" aria-label={`Fotos de ${product.name}`}>
       {gallery.map((item, index) => <button type="button" key={`${item.url}-${index}`} className={index === activeIndex ? 'selected' : ''} onClick={() => choose(index)} title={`${item.color}${item.printPattern ? ` · ${item.printPattern}` : ''}`}>
         <img src={item.url} alt={`${item.color} ${item.printPattern}`.trim() || product.name}/>
-        {item.color && <span>{item.color}</span>}
       </button>)}
     </div>}
 
