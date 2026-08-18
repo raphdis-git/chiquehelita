@@ -63,6 +63,7 @@ function emptyProductForm() {
   return {
     name: '', category: 'Vestidos', description: '', price: '', promotionalPrice: '', wholesalePrice: '',
     wholesaleRuleMode: 'inherit', wholesaleMinimumQuantity: '', imageUrl: '', sizeGuideImageUrl: '',
+    shippingWeightGrams: '', shippingHeightCm: '', shippingWidthCm: '', shippingLengthCm: '',
     featured: false, active: true, variants: [],
   };
 }
@@ -97,7 +98,7 @@ export default function AdminApp() {
   const [wholesaleMinimumDraft, setWholesaleMinimumDraft] = useState('6');
   const [storeNameDraft, setStoreNameDraft] = useState('CHIQUEHELITA');
   const [whatsappDraft, setWhatsappDraft] = useState('');
-  const [shippingDraft, setShippingDraft] = useState({ originPostalCode:'', weightGrams:'500', heightCm:'10', widthCm:'20', lengthCm:'30', maxItems:'5', handlingDays:'1', markup:'0', melhorEnvioEnabled:false, correiosEnabled:false });
+  const [shippingDraft, setShippingDraft] = useState({ originPostalCode:'', weightGrams:'500', packagingTareGrams:'100', heightCm:'10', widthCm:'20', lengthCm:'30', maxItems:'5', handlingDays:'1', markup:'0', melhorEnvioEnabled:false, correiosEnabled:false });
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsMessage, setSettingsMessage] = useState('');
   const [uploadingImages, setUploadingImages] = useState({});
@@ -114,13 +115,14 @@ export default function AdminApp() {
       supabase.from('products').select(`
         id, slug, name, category, description, price, promotional_price, wholesale_price,
         wholesale_rule_mode, wholesale_minimum_quantity, image_url, size_guide_image_url, featured, active,
+        shipping_weight_grams, shipping_height_cm, shipping_width_cm, shipping_length_cm,
         product_variants (
           id, color, print_pattern, image_url, sort_order, active,
           product_variant_stock (id, size, stock, sort_order),
           product_variant_images (id, image_url, sort_order, is_primary)
         )
       `).order('created_at', { ascending: false }),
-      supabase.from('store_settings').select('id, store_name, whatsapp, minimum_wholesale_quantity, primary_color, session_timeout_minutes, origin_postal_code, package_weight_grams, package_height_cm, package_width_cm, package_length_cm, max_items_per_package, shipping_handling_days, shipping_markup_percent, melhor_envio_enabled, correios_enabled').limit(1).maybeSingle(),
+      supabase.from('store_settings').select('id, store_name, whatsapp, minimum_wholesale_quantity, primary_color, session_timeout_minutes, origin_postal_code, package_weight_grams, packaging_tare_grams, package_height_cm, package_width_cm, package_length_cm, max_items_per_package, shipping_handling_days, shipping_markup_percent, melhor_envio_enabled, correios_enabled').limit(1).maybeSingle(),
       supabase.from('catalog_options').select('id, option_type, name, active').order('name'),
       supabase.from('orders').select('*, order_items(*)').order('created_at', { ascending: false }),
     ]);
@@ -143,7 +145,7 @@ export default function AdminApp() {
     setStoreNameDraft(settingsResult.data?.store_name ?? 'CHIQUEHELITA');
     setWhatsappDraft(settingsResult.data?.whatsapp ?? '');
     setShippingDraft({
-      originPostalCode:settingsResult.data?.origin_postal_code ?? '', weightGrams:String(settingsResult.data?.package_weight_grams ?? 500),
+      originPostalCode:settingsResult.data?.origin_postal_code ?? '', weightGrams:String(settingsResult.data?.package_weight_grams ?? 500), packagingTareGrams:String(settingsResult.data?.packaging_tare_grams ?? 100),
       heightCm:String(settingsResult.data?.package_height_cm ?? 10), widthCm:String(settingsResult.data?.package_width_cm ?? 20), lengthCm:String(settingsResult.data?.package_length_cm ?? 30),
       maxItems:String(settingsResult.data?.max_items_per_package ?? 5), handlingDays:String(settingsResult.data?.shipping_handling_days ?? 1), markup:String(settingsResult.data?.shipping_markup_percent ?? 0),
       melhorEnvioEnabled:Boolean(settingsResult.data?.melhor_envio_enabled), correiosEnabled:Boolean(settingsResult.data?.correios_enabled),
@@ -216,6 +218,7 @@ export default function AdminApp() {
       price: money(product.price), promotionalPrice: product.promotional_price == null ? '' : money(product.promotional_price),
       wholesalePrice: product.wholesale_price == null ? '' : money(product.wholesale_price),
       wholesaleRuleMode: product.wholesale_rule_mode ?? 'inherit', wholesaleMinimumQuantity: product.wholesale_minimum_quantity ?? '',
+      shippingWeightGrams:product.shipping_weight_grams ?? '', shippingHeightCm:product.shipping_height_cm ?? '', shippingWidthCm:product.shipping_width_cm ?? '', shippingLengthCm:product.shipping_length_cm ?? '',
       imageUrl: product.image_url ?? '', sizeGuideImageUrl: product.size_guide_image_url ?? '', featured: Boolean(product.featured),
       active: Boolean(product.active), variants,
     });
@@ -296,7 +299,7 @@ export default function AdminApp() {
     const whatsapp = whatsappDraft.replace(/\D/g, '');
     const originPostalCode = shippingDraft.originPostalCode.replace(/\D/g, '');
     const shippingNumbers = {
-      package_weight_grams:Number(shippingDraft.weightGrams), package_height_cm:Number(shippingDraft.heightCm), package_width_cm:Number(shippingDraft.widthCm),
+      package_weight_grams:Number(shippingDraft.weightGrams), packaging_tare_grams:Number(shippingDraft.packagingTareGrams), package_height_cm:Number(shippingDraft.heightCm), package_width_cm:Number(shippingDraft.widthCm),
       package_length_cm:Number(shippingDraft.lengthCm), max_items_per_package:Number(shippingDraft.maxItems), shipping_handling_days:Number(shippingDraft.handlingDays), shipping_markup_percent:Number(shippingDraft.markup),
     };
     setSettingsMessage('');
@@ -306,16 +309,16 @@ export default function AdminApp() {
     if (storeName.length < 2) { setSettingsMessage('Informe o nome comercial da loja.'); return; }
     if (!/^\d{10,15}$/.test(whatsapp)) { setSettingsMessage('Informe o WhatsApp com código do país e DDD, somente números.'); return; }
     if ((shippingDraft.melhorEnvioEnabled || shippingDraft.correiosEnabled) && !/^\d{8}$/.test(originPostalCode)) { setSettingsMessage('Informe um CEP de origem válido para ativar o frete.'); return; }
-    if (![shippingNumbers.package_weight_grams,shippingNumbers.package_height_cm,shippingNumbers.package_width_cm,shippingNumbers.package_length_cm,shippingNumbers.max_items_per_package].every((value) => Number.isFinite(value) && value > 0) || !Number.isInteger(shippingNumbers.shipping_handling_days) || shippingNumbers.shipping_handling_days < 0 || !Number.isFinite(shippingNumbers.shipping_markup_percent) || shippingNumbers.shipping_markup_percent < 0) { setSettingsMessage('Revise peso, dimensões, quantidade por pacote, prazo e acréscimo do frete.'); return; }
+    if (![shippingNumbers.package_weight_grams,shippingNumbers.package_height_cm,shippingNumbers.package_width_cm,shippingNumbers.package_length_cm,shippingNumbers.max_items_per_package].every((value) => Number.isFinite(value) && value > 0) || !Number.isFinite(shippingNumbers.packaging_tare_grams) || shippingNumbers.packaging_tare_grams < 0 || !Number.isInteger(shippingNumbers.shipping_handling_days) || shippingNumbers.shipping_handling_days < 0 || !Number.isFinite(shippingNumbers.shipping_markup_percent) || shippingNumbers.shipping_markup_percent < 0) { setSettingsMessage('Revise peso, embalagem, dimensões, quantidade por pacote, prazo e acréscimo do frete.'); return; }
     if (!settings?.id) { setSettingsMessage('Não foi possível identificar as configurações da loja.'); return; }
     setSettingsSaving(true);
     const { data, error } = await supabase.from('store_settings').update({ store_name: storeName, whatsapp, minimum_wholesale_quantity: minimum, origin_postal_code:originPostalCode, ...shippingNumbers, melhor_envio_enabled:shippingDraft.melhorEnvioEnabled, correios_enabled:shippingDraft.correiosEnabled })
-      .eq('id', settings.id).select('id, store_name, whatsapp, minimum_wholesale_quantity, primary_color, session_timeout_minutes, origin_postal_code, package_weight_grams, package_height_cm, package_width_cm, package_length_cm, max_items_per_package, shipping_handling_days, shipping_markup_percent, melhor_envio_enabled, correios_enabled').single();
+      .eq('id', settings.id).select('id, store_name, whatsapp, minimum_wholesale_quantity, primary_color, session_timeout_minutes, origin_postal_code, package_weight_grams, packaging_tare_grams, package_height_cm, package_width_cm, package_length_cm, max_items_per_package, shipping_handling_days, shipping_markup_percent, melhor_envio_enabled, correios_enabled').single();
     if (error || !data) {
       setSettingsMessage('Não foi possível salvar a nova regra geral de atacado.'); setSettingsSaving(false); return;
     }
     setSettings(data); setWholesaleMinimumDraft(String(data.minimum_wholesale_quantity)); setStoreNameDraft(data.store_name); setWhatsappDraft(data.whatsapp);
-    setShippingDraft({ originPostalCode:data.origin_postal_code ?? '', weightGrams:String(data.package_weight_grams), heightCm:String(data.package_height_cm), widthCm:String(data.package_width_cm), lengthCm:String(data.package_length_cm), maxItems:String(data.max_items_per_package), handlingDays:String(data.shipping_handling_days), markup:String(data.shipping_markup_percent), melhorEnvioEnabled:data.melhor_envio_enabled, correiosEnabled:data.correios_enabled });
+    setShippingDraft({ originPostalCode:data.origin_postal_code ?? '', weightGrams:String(data.package_weight_grams), packagingTareGrams:String(data.packaging_tare_grams), heightCm:String(data.package_height_cm), widthCm:String(data.package_width_cm), lengthCm:String(data.package_length_cm), maxItems:String(data.max_items_per_package), handlingDays:String(data.shipping_handling_days), markup:String(data.shipping_markup_percent), melhorEnvioEnabled:data.melhor_envio_enabled, correiosEnabled:data.correios_enabled });
     setSettingsMessage('Configurações comerciais e logísticas atualizadas com sucesso.'); setSettingsSaving(false);
   }
 
@@ -386,10 +389,14 @@ export default function AdminApp() {
     const promotionalPrice = parseCurrencyInput(productForm.promotionalPrice);
     const wholesalePrice = parseCurrencyInput(productForm.wholesalePrice);
     const wholesaleMinimum = productForm.wholesaleRuleMode === 'product' ? Number(productForm.wholesaleMinimumQuantity) : null;
+    const shippingValues = [productForm.shippingWeightGrams,productForm.shippingHeightCm,productForm.shippingWidthCm,productForm.shippingLengthCm];
+    const hasAnyShippingValue = shippingValues.some((value) => String(value).trim() !== '');
+    const normalizedShipping = shippingValues.map((value) => String(value).trim() === '' ? null : Number(value));
     if (!name || !slug || price === null || price < 0) { setProductFormMessage('Preencha o nome e o preço de varejo corretamente.'); setProductTab('data'); return; }
     if (!productForm.category) { setProductFormMessage('Selecione uma categoria.'); setProductTab('data'); return; }
     if (productForm.wholesaleRuleMode !== 'disabled' && wholesalePrice === null) { setProductFormMessage('Informe o preço de atacado ou escolha “Sem atacado”.'); setProductTab('data'); return; }
     if (productForm.wholesaleRuleMode === 'product' && (!wholesaleMinimum || wholesaleMinimum < 1)) { setProductFormMessage('Informe a quantidade mínima da regra específica.'); setProductTab('data'); return; }
+    if (hasAnyShippingValue && normalizedShipping.some((value) => !Number.isFinite(value) || value <= 0)) { setProductFormMessage('Preencha peso e todas as dimensões logísticas, ou deixe todos vazios para usar o padrão da loja.'); setProductTab('data'); return; }
     if (!productForm.variants.length) { setProductFormMessage('Adicione pelo menos uma foto/variação do vestido.'); setProductTab('variations'); return; }
     const normalizedVariants = productForm.variants.map((v) => ({ ...v, color: v.color.trim(), printPattern: v.printPattern.trim() }));
     if (normalizedVariants.some((v) => !v.color || !v.printPattern)) { setProductFormMessage('Informe cor e estampa em todas as variações.'); setProductTab('variations'); return; }
@@ -406,6 +413,8 @@ export default function AdminApp() {
       wholesale_rule_mode: productForm.wholesaleRuleMode, wholesale_minimum_quantity: wholesaleMinimum,
       image_url: productForm.imageUrl || firstVariantImage,
       size_guide_image_url: productForm.sizeGuideImageUrl || null,
+      shipping_weight_grams:hasAnyShippingValue ? normalizedShipping[0] : null, shipping_height_cm:hasAnyShippingValue ? normalizedShipping[1] : null,
+      shipping_width_cm:hasAnyShippingValue ? normalizedShipping[2] : null, shipping_length_cm:hasAnyShippingValue ? normalizedShipping[3] : null,
       featured: productForm.featured, active: productForm.active,
     };
 
@@ -658,12 +667,13 @@ export default function AdminApp() {
               <div className="admin-settings-grid"><label>Nome comercial<input value={storeNameDraft} onChange={(e) => setStoreNameDraft(e.target.value)} required/></label>
                 <label>WhatsApp <small>País + DDD + número</small><input inputMode="numeric" value={whatsappDraft} onChange={(e) => setWhatsappDraft(e.target.value.replace(/\D/g, '').slice(0,15))} placeholder="5562999999999" required/></label>
                 <label>Quantidade mínima geral<input type="number" min="1" step="1" value={wholesaleMinimumDraft} onChange={(e) => setWholesaleMinimumDraft(e.target.value)} required/></label></div>
-              <section className="admin-shipping-settings"><header><div><p className="admin-eyebrow">FRETE AUTOMÁTICO</p><h3>Origem e embalagem padrão</h3><span>Use as medidas do pacote pronto para postagem. As credenciais serão adicionadas separadamente como segredos protegidos.</span></div></header>
+              <section className="admin-shipping-settings"><header><div><p className="admin-eyebrow">FRETE AUTOMÁTICO</p><h3>Origem e valores padrão</h3><span>Estes dados serão usados somente quando um produto ainda não possuir peso e dimensões próprias.</span></div></header>
                 <div className="admin-settings-grid shipping"><label>CEP de origem<input inputMode="numeric" maxLength="8" value={shippingDraft.originPostalCode} onChange={(e) => setShippingDraft((current) => ({...current,originPostalCode:e.target.value.replace(/\D/g,'').slice(0,8)}))} placeholder="Somente números"/></label>
-                  <label>Peso por vestido (g)<input type="number" min="1" step="1" value={shippingDraft.weightGrams} onChange={(e) => setShippingDraft((current) => ({...current,weightGrams:e.target.value}))}/></label>
-                  <label>Altura do pacote (cm)<input type="number" min="1" step="0.1" value={shippingDraft.heightCm} onChange={(e) => setShippingDraft((current) => ({...current,heightCm:e.target.value}))}/></label>
-                  <label>Largura do pacote (cm)<input type="number" min="1" step="0.1" value={shippingDraft.widthCm} onChange={(e) => setShippingDraft((current) => ({...current,widthCm:e.target.value}))}/></label>
-                  <label>Comprimento do pacote (cm)<input type="number" min="1" step="0.1" value={shippingDraft.lengthCm} onChange={(e) => setShippingDraft((current) => ({...current,lengthCm:e.target.value}))}/></label>
+                  <label>Peso padrão do produto (g)<input type="number" min="1" step="1" value={shippingDraft.weightGrams} onChange={(e) => setShippingDraft((current) => ({...current,weightGrams:e.target.value}))}/></label>
+                  <label>Peso da embalagem (g)<input type="number" min="0" step="1" value={shippingDraft.packagingTareGrams} onChange={(e) => setShippingDraft((current) => ({...current,packagingTareGrams:e.target.value}))}/></label>
+                  <label>Altura padrão (cm)<input type="number" min="1" step="0.1" value={shippingDraft.heightCm} onChange={(e) => setShippingDraft((current) => ({...current,heightCm:e.target.value}))}/></label>
+                  <label>Largura padrão (cm)<input type="number" min="1" step="0.1" value={shippingDraft.widthCm} onChange={(e) => setShippingDraft((current) => ({...current,widthCm:e.target.value}))}/></label>
+                  <label>Comprimento padrão (cm)<input type="number" min="1" step="0.1" value={shippingDraft.lengthCm} onChange={(e) => setShippingDraft((current) => ({...current,lengthCm:e.target.value}))}/></label>
                   <label>Máximo de vestidos/pacote<input type="number" min="1" step="1" value={shippingDraft.maxItems} onChange={(e) => setShippingDraft((current) => ({...current,maxItems:e.target.value}))}/></label>
                   <label>Prazo de preparação (dias)<input type="number" min="0" step="1" value={shippingDraft.handlingDays} onChange={(e) => setShippingDraft((current) => ({...current,handlingDays:e.target.value}))}/></label>
                   <label>Acréscimo no frete (%)<input type="number" min="0" step="0.01" value={shippingDraft.markup} onChange={(e) => setShippingDraft((current) => ({...current,markup:e.target.value}))}/></label></div>
@@ -687,6 +697,7 @@ export default function AdminApp() {
                     <div className="admin-product-title-row"><div><small>{product.category}</small><h3>{product.name}</h3></div>{product.featured && <span className="admin-featured">Destaque</span>}</div>
                     <div className="admin-price-row"><div><span>Varejo</span><strong>{money(price)}</strong></div><div><span>Atacado</span><strong>{product.wholesale_rule_mode === 'disabled' ? '—' : money(product.wholesale_price)}</strong></div></div>
                     <div className="admin-rule-box"><span>Regra de atacado</span><strong>{wholesaleLabel(product, generalMinimum)}</strong></div>
+                    <div className={`admin-logistics-status ${product.shipping_weight_grams ? 'complete' : 'fallback'}`}><span>Logística</span><strong>{product.shipping_weight_grams ? `${product.shipping_weight_grams} g · ${product.shipping_length_cm} × ${product.shipping_width_cm} × ${product.shipping_height_cm} cm` : 'Usando valores padrão da loja'}</strong></div>
                     <div className="admin-product-footer"><span>Estoque total</span><strong>{stock} peças</strong></div>
                     <button type="button" className="admin-edit-product-button" onClick={() => openEditProduct(product)}><Pencil size={16}/>Editar produto</button>
                   </div>
@@ -730,6 +741,7 @@ export default function AdminApp() {
                 <label>Regra de atacado<select value={productForm.wholesaleRuleMode} onChange={(e) => updateProductField('wholesaleRuleMode', e.target.value)}><option value="inherit">Usar regra geral</option><option value="product">Regra específica deste produto</option><option value="disabled">Sem atacado</option></select></label>
                 {productForm.wholesaleRuleMode === 'product' && <label>Mínimo específico<input type="number" min="1" value={productForm.wholesaleMinimumQuantity} onChange={(e) => updateProductField('wholesaleMinimumQuantity', e.target.value)}/></label>}
               </div>
+              <section className="admin-product-logistics"><div><p className="admin-eyebrow">LOGÍSTICA</p><h3>Peso e dimensões deste produto</h3><p>Preencha os quatro campos para uma cotação precisa. Se todos ficarem vazios, serão usados os valores padrão da loja.</p></div><div className="admin-form-grid four"><label>Peso (g)<input type="number" min="1" step="1" value={productForm.shippingWeightGrams} onChange={(e) => updateProductField('shippingWeightGrams',e.target.value)}/></label><label>Altura (cm)<input type="number" min="1" step="0.1" value={productForm.shippingHeightCm} onChange={(e) => updateProductField('shippingHeightCm',e.target.value)}/></label><label>Largura (cm)<input type="number" min="1" step="0.1" value={productForm.shippingWidthCm} onChange={(e) => updateProductField('shippingWidthCm',e.target.value)}/></label><label>Comprimento (cm)<input type="number" min="1" step="0.1" value={productForm.shippingLengthCm} onChange={(e) => updateProductField('shippingLengthCm',e.target.value)}/></label></div></section>
             </div>}
 
             {productTab === 'images' && <div className="admin-tab-panel">
