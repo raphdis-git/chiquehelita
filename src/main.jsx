@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import StoreApp from './StoreApp';
@@ -9,11 +8,11 @@ import './gallery.css';
 import './product-page.css';
 import './search-menu.css';
 import './checkout.css';
+import './brand-loader.css';
 
 const isAdminRoute = /\/admin\/?$/.test(window.location.pathname);
 
 createRoot(document.getElementById('root')).render(
   isAdminRoute ? <AdminApp /> : <StoreApp />,
 );
-
 
