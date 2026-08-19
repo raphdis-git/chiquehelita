@@ -1,0 +1,105 @@
+.brand-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  padding: 30px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 46%, rgba(246, 6, 135, .09), transparent 28%),
+    linear-gradient(145deg, #fff 0%, #fff8fc 52%, #fff 100%);
+  color: #241f22;
+  text-align: center;
+}
+
+.brand-loader-mark {
+  position: relative;
+  width: 138px;
+  height: 138px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 21px;
+}
+
+.brand-loader-mark img {
+  position: relative;
+  z-index: 2;
+  width: 92px;
+  height: 92px;
+  object-fit: contain;
+  border-radius: 20px;
+  filter: drop-shadow(0 12px 18px rgba(153, 0, 78, .17));
+  animation: brand-logo-float 1.8s ease-in-out infinite;
+}
+
+.brand-loader-ring,
+.brand-loader-glow {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+}
+
+.brand-loader-ring {
+  border: 2px solid rgba(246, 6, 135, .12);
+  border-top-color: #f60687;
+  border-right-color: rgba(246, 6, 135, .55);
+  animation: brand-ring-spin 1.35s linear infinite;
+}
+
+.brand-loader-glow {
+  inset: 13px;
+  background: rgba(246, 6, 135, .08);
+  animation: brand-glow-pulse 1.8s ease-in-out infinite;
+}
+
+.brand-loader > strong {
+  color: #f60687;
+  font-size: 20px;
+  letter-spacing: .22em;
+  line-height: 1;
+}
+
+.brand-loader-message {
+  margin-top: 11px;
+  color: #766d72;
+  font-size: 12px;
+}
+
+.brand-loader-dots {
+  display: flex;
+  gap: 5px;
+  margin-top: 14px;
+}
+
+.brand-loader-dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #f60687;
+  animation: brand-dot-bounce 1.05s ease-in-out infinite;
+}
+
+.brand-loader-dots i:nth-child(2) { animation-delay: .14s; }
+.brand-loader-dots i:nth-child(3) { animation-delay: .28s; }
+
+@keyframes brand-ring-spin { to { transform: rotate(360deg); } }
+@keyframes brand-logo-float { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-5px) scale(1.025); } }
+@keyframes brand-glow-pulse { 0%, 100% { opacity: .45; transform: scale(.88); } 50% { opacity: 1; transform: scale(1.05); } }
+@keyframes brand-dot-bounce { 0%, 60%, 100% { opacity: .3; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-4px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-loader-mark img,
+  .brand-loader-ring,
+  .brand-loader-glow,
+  .brand-loader-dots i { animation: none; }
+}
+
+@media (max-width: 560px) {
+  .brand-loader-mark { width: 120px; height: 120px; }
+  .brand-loader-mark img { width: 80px; height: 80px; border-radius: 17px; }
+  .brand-loader > strong { font-size: 17px; }
+}

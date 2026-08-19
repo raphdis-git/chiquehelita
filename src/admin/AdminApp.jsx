@@ -5,6 +5,7 @@ import {
   Trash2, Upload, Users, X,
 } from 'lucide-react';
 import logo from '../assets/Logo.png';
+import BrandLoader from '../BrandLoader';
 import { supabase } from '../lib/supabase';
 import './admin.css';
 import './admin-orders.css';
@@ -655,7 +656,7 @@ export default function AdminApp() {
     (sum, variant) => sum + SIZE_LABELS.reduce((subtotal, size) => subtotal + (Number(variant.stock[size]) || 0), 0), 0,
   ), [productForm.variants]);
 
-  if (loading) return <main className="admin-loading"><div className="admin-spinner"/><p>Carregando painel...</p></main>;
+  if (loading) return <BrandLoader message="Carregando painel administrativo..."/>;
   if (!session || !isAdmin) return (
     <main className="admin-login-page"><section className="admin-login-card">
       <img src={logo} alt="Chique Helita" className="admin-logo"/>
