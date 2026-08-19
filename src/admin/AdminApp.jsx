@@ -66,7 +66,7 @@ function emptyProductForm() {
     name: '', category: 'Vestidos', description: '', price: '', promotionalPrice: '', wholesalePrice: '',
     wholesaleRuleMode: 'inherit', wholesaleMinimumQuantity: '', imageUrl: '', sizeGuideImageUrl: '',
     shippingWeightGrams: '', shippingHeightCm: '', shippingWidthCm: '', shippingLengthCm: '',
-    featured: false, active: true, variants: [],
+    featured: false, showInPromotions: false, active: true, variants: [],
   };
 }
 
@@ -159,7 +159,7 @@ export default function AdminApp() {
     const [productsResult, settingsResult, optionsResult, ordersResult] = await Promise.all([
       supabase.from('products').select(`
         id, slug, name, category, description, price, promotional_price, wholesale_price,
-        wholesale_rule_mode, wholesale_minimum_quantity, image_url, size_guide_image_url, featured, active,
+        wholesale_rule_mode, wholesale_minimum_quantity, image_url, size_guide_image_url, featured, show_in_promotions, active,
         shipping_weight_grams, shipping_height_cm, shipping_width_cm, shipping_length_cm,
         product_variants (
           id, color, print_pattern, image_url, sort_order, active,
@@ -282,6 +282,7 @@ export default function AdminApp() {
       wholesaleRuleMode: product.wholesale_rule_mode ?? 'inherit', wholesaleMinimumQuantity: product.wholesale_minimum_quantity ?? '',
       shippingWeightGrams:product.shipping_weight_grams ?? '', shippingHeightCm:product.shipping_height_cm ?? '', shippingWidthCm:product.shipping_width_cm ?? '', shippingLengthCm:product.shipping_length_cm ?? '',
       imageUrl: product.image_url ?? '', sizeGuideImageUrl: product.size_guide_image_url ?? '', featured: Boolean(product.featured),
+      showInPromotions: Boolean(product.show_in_promotions),
       active: Boolean(product.active), variants,
     });
     setProductTab('data');
@@ -514,7 +515,7 @@ export default function AdminApp() {
       size_guide_image_url: productForm.sizeGuideImageUrl || null,
       shipping_weight_grams:hasAnyShippingValue ? normalizedShipping[0] : null, shipping_height_cm:hasAnyShippingValue ? normalizedShipping[1] : null,
       shipping_width_cm:hasAnyShippingValue ? normalizedShipping[2] : null, shipping_length_cm:hasAnyShippingValue ? normalizedShipping[3] : null,
-      featured: productForm.featured, active: productForm.active,
+      featured: productForm.featured, show_in_promotions: productForm.showInPromotions, active: productForm.active,
     };
 
     let productId = editingProductId;
@@ -817,7 +818,7 @@ export default function AdminApp() {
                 return <article className="admin-product-card" key={product.id}>
                   <div className="admin-product-image-wrap">{product.image_url ? <img src={product.image_url} alt={product.name}/> : <div className="admin-no-image">Sem imagem</div>}<span className={`admin-status ${product.active ? 'active' : 'inactive'}`}>{product.active ? 'Ativo' : 'Inativo'}</span></div>
                   <div className="admin-product-body">
-                    <div className="admin-product-title-row"><div><small>{product.category}</small><h3>{product.name}</h3></div>{product.featured && <span className="admin-featured">Destaque</span>}</div>
+                    <div className="admin-product-title-row"><div><small>{product.category}</small><h3>{product.name}</h3></div><div>{product.show_in_promotions && <span className="admin-featured">Promoção</span>}{product.featured && <span className="admin-featured">Destaque</span>}</div></div>
                     <div className="admin-price-row"><div><span>Varejo</span><strong>{money(price)}</strong></div><div><span>Atacado</span><strong>{product.wholesale_rule_mode === 'disabled' ? '—' : money(product.wholesale_price)}</strong></div></div>
                     <div className="admin-rule-box"><span>Regra de atacado</span><strong>{wholesaleLabel(product, generalMinimum)}</strong></div>
                     <div className={`admin-logistics-status ${product.shipping_weight_grams ? 'complete' : 'fallback'}`}><span>Logística</span><strong>{product.shipping_weight_grams ? `${product.shipping_weight_grams} g · ${product.shipping_length_cm} × ${product.shipping_width_cm} × ${product.shipping_height_cm} cm` : 'Usando valores padrão da loja'}</strong></div>
@@ -909,10 +910,11 @@ export default function AdminApp() {
             </div>}
 
             {productTab === 'highlight' && <div className="admin-tab-panel">
-              <div className="admin-section-intro"><div><p className="admin-eyebrow">PUBLICAÇÃO</p><h3>Destaque e disponibilidade</h3><p>Controle se o produto aparece na loja e se deve receber destaque na vitrine.</p></div></div>
+              <div className="admin-section-intro"><div><p className="admin-eyebrow">PUBLICAÇÃO</p><h3>Destaque, promoções e disponibilidade</h3><p>Controle onde o produto aparece na loja.</p></div></div>
               <div className="admin-publish-options">
                 <label><input type="checkbox" checked={productForm.active} onChange={(e) => updateProductField('active', e.target.checked)}/><div><strong>Produto ativo</strong><span>Quando desativado, não aparece para clientes.</span></div></label>
                 <label><input type="checkbox" checked={productForm.featured} onChange={(e) => updateProductField('featured', e.target.checked)}/><div><strong>Produto em destaque</strong><span>Use para novidades, lançamentos e peças prioritárias.</span></div></label>
+                <label><input type="checkbox" checked={productForm.showInPromotions} onChange={(e) => updateProductField('showInPromotions', e.target.checked)}/><div><strong>Exibir na aba Promoções</strong><span>Quando ativado, o produto aparece na seção de ofertas da loja.</span></div></label>
               </div>
             </div>}
 
