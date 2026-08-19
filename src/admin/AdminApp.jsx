@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Boxes, ChevronDown, CircleDollarSign, Home, ImagePlus, LockKeyhole, LogOut, PackageCheck,
-  Pencil, Plus, RefreshCw, Save, Settings, ShieldCheck, ShoppingBag, Tags,
+  Pencil, Plus, Power, RefreshCw, Save, Search, Settings, ShieldCheck, ShoppingBag, Tags,
   Trash2, Upload, Users, X,
 } from 'lucide-react';
 import logo from '../assets/Logo.png';
@@ -97,6 +97,7 @@ export default function AdminApp() {
   const [newOptionName, setNewOptionName] = useState('');
   const [optionSaving, setOptionSaving] = useState(false);
   const [optionMessage, setOptionMessage] = useState('');
+  const [catalogSearch, setCatalogSearch] = useState({ category: '', color: '', print: '' });
   const [wholesaleMinimumDraft, setWholesaleMinimumDraft] = useState('6');
   const [sessionTimeoutDraft, setSessionTimeoutDraft] = useState('60');
   const [storeNameDraft, setStoreNameDraft] = useState('CHIQUEHELITA');
@@ -319,20 +320,39 @@ export default function AdminApp() {
     }));
   }
 
-  function openOptionModal(type, variantIndex = null) {
-    setOptionModal({ type, variantIndex }); setNewOptionName(''); setOptionMessage('');
+  function openOptionModal(type, variantIndex = null, option = null) {
+    setOptionModal({ type, variantIndex, option }); setNewOptionName(option?.name ?? ''); setOptionMessage('');
   }
   function closeOptionModal() {
     if (optionSaving) return;
     setOptionModal(null); setNewOptionName(''); setOptionMessage('');
   }
-  async function handleAddOption(event) {
+  async function handleSaveOption(event) {
     event.preventDefault(); if (!optionModal) return;
     const name = newOptionName.trim();
     if (!name) { setOptionMessage(`Informe o nome da ${OPTION_LABELS[optionModal.type]}.`); return; }
-    const exists = catalogOptions.some((item) => item.option_type === optionModal.type && item.name.toLocaleLowerCase('pt-BR') === name.toLocaleLowerCase('pt-BR'));
+    const exists = catalogOptions.some((item) => item.id !== optionModal.option?.id && item.option_type === optionModal.type && item.name.toLocaleLowerCase('pt-BR') === name.toLocaleLowerCase('pt-BR'));
     if (exists) { setOptionMessage(`Esta ${OPTION_LABELS[optionModal.type]} já está cadastrada.`); return; }
     setOptionSaving(true);
+    if (optionModal.option) {
+      const previousName = optionModal.option.name;
+      const { data, error } = await supabase.from('catalog_options').update({ name, updated_at: new Date().toISOString() }).eq('id', optionModal.option.id).select('id, option_type, name, active').single();
+      if (error || !data) { setOptionMessage('Não foi possível editar esta opção.'); setOptionSaving(false); return; }
+      const referenceUpdate = optionModal.type === 'category'
+        ? await supabase.from('products').update({ category: name, updated_at: new Date().toISOString() }).eq('category', previousName)
+        : optionModal.type === 'color'
+          ? await supabase.from('product_variants').update({ color: name, updated_at: new Date().toISOString() }).eq('color', previousName)
+          : await supabase.from('product_variants').update({ print_pattern: name, updated_at: new Date().toISOString() }).eq('print_pattern', previousName);
+      if (referenceUpdate.error) {
+        await supabase.from('catalog_options').update({ name: previousName, updated_at: new Date().toISOString() }).eq('id', optionModal.option.id);
+        setOptionMessage('Não foi possível atualizar os produtos que usam esta opção.'); setOptionSaving(false); return;
+      }
+      setCatalogOptions((current) => current.map((item) => item.id === data.id ? data : item));
+      setProducts((current) => current.map((product) => optionModal.type === 'category'
+        ? { ...product, category: product.category === previousName ? name : product.category }
+        : { ...product, product_variants: product.product_variants.map((variant) => ({ ...variant, ...(optionModal.type === 'color' && variant.color === previousName ? { color: name } : {}), ...(optionModal.type === 'print' && variant.print_pattern === previousName ? { print_pattern: name } : {}) })) }));
+      setOptionSaving(false); setOptionModal(null); setNewOptionName(''); setOptionMessage(''); setMessage(`${previousName} foi alterada para ${name}.`); return;
+    }
     const { data, error } = await supabase.from('catalog_options').insert({ option_type: optionModal.type, name, active: true }).select('id, option_type, name, active').single();
     if (error || !data) {
       setOptionMessage(error?.code === '23505' ? 'Esta opção já existe.' : 'Não foi possível adicionar a opção.');
@@ -350,6 +370,20 @@ export default function AdminApp() {
     if (error) { setMessage('Não foi possível alterar esta opção.'); return; }
     setCatalogOptions((current) => current.map((item) => item.id === option.id ? { ...item, active: !item.active } : item));
     setMessage(`${option.name} ${option.active ? 'desativada' : 'ativada'} com sucesso.`);
+  }
+  function catalogOptionUsage(option) {
+    if (option.option_type === 'category') return products.filter((product) => product.category === option.name).length;
+    const productIds = new Set(products.filter((product) => product.product_variants.some((variant) => option.option_type === 'color' ? variant.color === option.name : variant.print_pattern === option.name)).map((product) => product.id));
+    return productIds.size;
+  }
+  async function deleteCatalogOption(option) {
+    const usage = catalogOptionUsage(option);
+    if (usage > 0) { setMessage(`Não é possível excluir ${option.name}: esta opção é usada em ${usage} produto(s). Você pode desativá-la.`); return; }
+    if (!window.confirm(`Excluir definitivamente “${option.name}”? Esta ação não poderá ser desfeita.`)) return;
+    const { error } = await supabase.from('catalog_options').delete().eq('id', option.id);
+    if (error) { setMessage('Não foi possível excluir esta opção.'); return; }
+    setCatalogOptions((current) => current.filter((item) => item.id !== option.id));
+    setMessage(`${option.name} foi excluída com sucesso.`);
   }
 
   async function handleSaveSettings(event) {
@@ -661,7 +695,7 @@ export default function AdminApp() {
     ['dashboard', <Home size={18}/>, 'Dashboard'],
     ['orders', <ShoppingBag size={18}/>, 'Pedidos'],
     ['products', <Boxes size={18}/>, 'Produtos'],
-    ['categories', <Tags size={18}/>, 'Catálogo'],
+    ['categories', <Tags size={18}/>, 'Opções'],
     ['clients', <Users size={18}/>, 'Clientes'],
     ['settings', <Settings size={18}/>, 'Configurações'],
   ];
@@ -680,7 +714,7 @@ export default function AdminApp() {
 
       <div className="admin-main-area">
         <header className="admin-topbar">
-          <div><p className="admin-eyebrow">CHIQUE HELITA</p><h1>{adminSection === 'products' ? 'Produtos' : adminSection === 'orders' ? 'Pedidos' : adminSection === 'clients' ? 'Clientes' : adminSection === 'categories' ? 'Opções do catálogo' : adminSection === 'settings' ? 'Configurações' : 'Dashboard'}</h1></div>
+          <div><p className="admin-eyebrow">CHIQUE HELITA</p><h1>{adminSection === 'products' ? 'Produtos' : adminSection === 'orders' ? 'Pedidos' : adminSection === 'clients' ? 'Clientes' : adminSection === 'categories' ? 'Opções de produtos' : adminSection === 'settings' ? 'Configurações' : 'Dashboard'}</h1></div>
           <div className="admin-header-actions">
             <button className="admin-topbar-button" onClick={loadDashboard} disabled={dashboardLoading}><RefreshCw size={17} className={dashboardLoading ? 'admin-spin-icon' : ''}/>Atualizar</button>
             {adminSection === 'products' && <button className="admin-primary-button" type="button" onClick={openNewProduct}><Plus size={17}/>Novo produto</button>}
@@ -730,8 +764,20 @@ export default function AdminApp() {
           </section>}
 
           {adminSection === 'categories' && <section className="admin-panel">
-            <div className="admin-panel-heading"><div><p className="admin-eyebrow">ORGANIZAÇÃO</p><h2>Categorias, cores e estampas</h2><p>Centralize as opções disponíveis no cadastro dos produtos.</p></div></div>
-            <div className="admin-catalog-columns">{[['category','Categorias'],['color','Cores'],['print','Estampas']].map(([type,title]) => <article key={type}><header><div><h3>{title}</h3><span>{catalogOptions.filter((item) => item.option_type === type && item.active).length} ativas</span></div><button className="admin-primary-button" type="button" onClick={() => openOptionModal(type)}><Plus size={15}/>Adicionar</button></header><div>{catalogOptions.filter((item) => item.option_type === type).map((option) => <div className={`admin-catalog-option ${option.active ? '' : 'inactive'}`} key={option.id}><span>{option.name}</span><button type="button" onClick={() => toggleCatalogOption(option)}>{option.active ? 'Desativar' : 'Ativar'}</button></div>)}</div></article>)}</div>
+            <div className="admin-panel-heading"><div><p className="admin-eyebrow">ORGANIZAÇÃO</p><h2>Opções de produtos</h2><p>Gerencie as categorias, cores e estampas usadas no cadastro dos produtos.</p></div></div>
+            <div className="admin-catalog-columns">{[['category','Categorias'],['color','Cores'],['print','Estampas']].map(([type,title]) => {
+              const typeOptions = catalogOptions.filter((item) => item.option_type === type);
+              const search = catalogSearch[type].trim().toLocaleLowerCase('pt-BR');
+              const visibleOptions = typeOptions.filter((item) => !search || item.name.toLocaleLowerCase('pt-BR').includes(search));
+              const activeCount = typeOptions.filter((item) => item.active).length;
+              return <article key={type}><header><div><h3>{title}</h3><span>{activeCount} ativas · {typeOptions.length} no total</span></div><button className="admin-primary-button" type="button" onClick={() => openOptionModal(type)}><Plus size={15}/>Adicionar</button></header>
+                <label className="admin-catalog-search"><Search size={15}/><input value={catalogSearch[type]} onChange={(event) => setCatalogSearch((current) => ({ ...current, [type]: event.target.value }))} placeholder={`Buscar em ${title.toLocaleLowerCase('pt-BR')}`} aria-label={`Buscar ${title.toLocaleLowerCase('pt-BR')}`}/></label>
+                <div className="admin-catalog-list">{visibleOptions.length === 0 ? <p className="admin-catalog-empty">Nenhuma opção encontrada.</p> : visibleOptions.map((option) => {
+                  const usage = catalogOptionUsage(option);
+                  return <div className={`admin-catalog-option ${option.active ? '' : 'inactive'}`} key={option.id}><div><strong>{option.name}</strong><small>{usage ? `Usada em ${usage} produto(s)` : 'Ainda não utilizada'}</small></div><div className="admin-catalog-actions"><button type="button" onClick={() => openOptionModal(type, null, option)} title={`Editar ${option.name}`} aria-label={`Editar ${option.name}`}><Pencil size={14}/></button><button type="button" onClick={() => toggleCatalogOption(option)} title={option.active ? `Desativar ${option.name}` : `Ativar ${option.name}`} aria-label={option.active ? `Desativar ${option.name}` : `Ativar ${option.name}`}><Power size={14}/><span>{option.active ? 'Desativar' : 'Ativar'}</span></button><button type="button" className="delete" onClick={() => deleteCatalogOption(option)} title={`Excluir ${option.name}`} aria-label={`Excluir ${option.name}`}><Trash2 size={14}/></button></div></div>;
+                })}</div>
+              </article>;
+            })}</div>
           </section>}
 
           {adminSection === 'settings' && <section className="admin-panel admin-settings-panel">
@@ -879,8 +925,8 @@ export default function AdminApp() {
       </div>}
 
       {optionModal && <div className="admin-option-modal-backdrop" onClick={closeOptionModal}><section className="admin-option-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="admin-option-modal-head"><div><p className="admin-eyebrow">NOVA OPÇÃO</p><h3>Adicionar {OPTION_LABELS[optionModal.type]}</h3></div><button type="button" className="admin-icon-button" onClick={closeOptionModal} disabled={optionSaving}><X size={18}/></button></div>
-        <form onSubmit={handleAddOption}><label>Nome da {OPTION_LABELS[optionModal.type]}<input autoFocus value={newOptionName} onChange={(e) => setNewOptionName(e.target.value)} placeholder={`Ex.: ${optionModal.type === 'category' ? 'Conjuntos' : optionModal.type === 'color' ? 'Verde Oliva' : 'Floral'}`} required/></label>{optionMessage && <p className="admin-message">{optionMessage}</p>}<div className="admin-form-actions"><button type="button" className="admin-secondary-button" onClick={closeOptionModal} disabled={optionSaving}>Cancelar</button><button type="submit" className="admin-primary-button" disabled={optionSaving}>{optionSaving ? 'Adicionando...' : 'Adicionar'}</button></div></form>
+        <div className="admin-option-modal-head"><div><p className="admin-eyebrow">{optionModal.option ? 'EDITAR OPÇÃO' : 'NOVA OPÇÃO'}</p><h3>{optionModal.option ? 'Editar' : 'Adicionar'} {OPTION_LABELS[optionModal.type]}</h3></div><button type="button" className="admin-icon-button" onClick={closeOptionModal} disabled={optionSaving}><X size={18}/></button></div>
+        <form onSubmit={handleSaveOption}><label>Nome da {OPTION_LABELS[optionModal.type]}<input autoFocus value={newOptionName} onChange={(e) => setNewOptionName(e.target.value)} placeholder={`Ex.: ${optionModal.type === 'category' ? 'Conjuntos' : optionModal.type === 'color' ? 'Verde Oliva' : 'Floral'}`} required/></label>{optionMessage && <p className="admin-message">{optionMessage}</p>}<div className="admin-form-actions"><button type="button" className="admin-secondary-button" onClick={closeOptionModal} disabled={optionSaving}>Cancelar</button><button type="submit" className="admin-primary-button" disabled={optionSaving}>{optionSaving ? 'Salvando...' : optionModal.option ? 'Salvar alteração' : 'Adicionar'}</button></div></form>
       </section></div>}
     </main>
   );
