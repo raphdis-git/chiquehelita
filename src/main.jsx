@@ -10,6 +10,7 @@ import './search-menu.css';
 import './checkout.css';
 import './brand-loader.css';
 import './anchor-navigation.css';
+import './promotions.css';
 
 const isAdminRoute = /\/admin\/?$/.test(window.location.pathname);
 
