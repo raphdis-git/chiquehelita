@@ -42,15 +42,19 @@ export function validateCustomer(customer) {
   return errors;
 }
 
-export function buildWhatsAppMessage({ customer, lines, summary, money }) {
+export function buildWhatsAppMessage({ customer, lines, summary, money, orderNumber, shipping, productsAmount, totalAmount }) {
   const items = lines.map((line, index) => {
     const price = summary.items.find((item) => item.productId === line.product.id);
     return `${index + 1}. ${line.quantity}x ${line.product.name}\n   Cor: ${line.variant.color} | Estampa: ${line.variant.printPattern} | Tam.: ${line.size.label}\n   ${price?.wholesale ? 'Atacado' : 'Varejo'}: ${money(price?.unitPrice ?? 0)} por peça`;
   }).join('\n\n');
 
-  const fulfillment = customer.fulfillment === 'delivery' ? 'Entrega (frete a combinar)' : 'Retirada (detalhes a combinar)';
+  const fulfillment = customer.fulfillment === 'delivery' && shipping ? `Entrega — ${shipping.company} / ${shipping.serviceName}` : 'Retirada (detalhes a combinar)';
   const notes = clean(customer.notes) || 'Nenhuma';
+  const productTotal = Number(productsAmount ?? summary.total);
+  const freight = Number(shipping?.price || 0);
+  const grandTotal = Number(totalAmount ?? productTotal + freight);
+  const deadline = shipping ? (shipping.deliveryMinDays === shipping.deliveryMaxDays ? `${shipping.deliveryMaxDays} dias úteis` : `${shipping.deliveryMinDays} a ${shipping.deliveryMaxDays} dias úteis`) : null;
 
-  return `Olá! Quero finalizar meu pedido na CHIQUEHELITA.\n\n*DADOS DO CLIENTE*\nNome completo: ${clean(customer.name)}\nE-mail: ${clean(customer.email) || 'Não informado'}\nCPF/CNPJ: ${digits(customer.taxId)}\nTelefone: ${digits(customer.phone)}\nEndereço: ${clean(customer.address)}\nQuadra / lote / número: ${clean(customer.addressNumber)}\nBairro/setor: ${clean(customer.district)}\nCidade/UF: ${clean(customer.city)} - ${clean(customer.state).toUpperCase()}\nCEP: ${digits(customer.postalCode)}\nRecebimento: ${fulfillment}\nPagamento: ${clean(customer.payment)}\n\n*ITENS DO PEDIDO*\n${items}\n\n*RESUMO*\nQuantidade: ${summary.totalQuantity} peças\nTotal dos produtos: ${money(summary.total)}\nFrete: a combinar\n\nObservações: ${notes}`;
+  return `Olá! Quero finalizar meu pedido na CHIQUEHELITA.${orderNumber ? `\nPedido nº ${orderNumber}` : ''}\n\n*DADOS DO CLIENTE*\nNome completo: ${clean(customer.name)}\nE-mail: ${clean(customer.email) || 'Não informado'}\nCPF/CNPJ: ${digits(customer.taxId)}\nTelefone: ${digits(customer.phone)}\nEndereço: ${clean(customer.address)}\nQuadra / lote / número: ${clean(customer.addressNumber)}\nBairro/setor: ${clean(customer.district)}\nCidade/UF: ${clean(customer.city)} - ${clean(customer.state).toUpperCase()}\nCEP: ${digits(customer.postalCode)}\nRecebimento: ${fulfillment}\nPagamento: ${clean(customer.payment)}\n\n*ITENS DO PEDIDO*\n${items}\n\n*RESUMO*\nQuantidade: ${summary.totalQuantity} peças\nTotal dos produtos: ${money(productTotal)}\nFrete: ${shipping ? `${money(freight)} (${deadline})` : 'Retirada'}\n*Total do pedido: ${money(grandTotal)}*\n\nObservações: ${notes}`;
 }
 
