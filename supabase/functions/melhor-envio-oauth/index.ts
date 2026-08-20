@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.112.3";
 
 const ADMIN_URL = "https://raphdis-git.github.io/chiquehelita/admin/";
+const MELHOR_ENVIO_API_URL = "https://sandbox.melhorenvio.com.br";
 const ALLOWED_ORIGINS = new Set(["https://raphdis-git.github.io", "http://localhost:5173"]);
 const encoder = new TextEncoder();
 
@@ -80,7 +81,7 @@ Deno.serve(async (req) => {
     const clientId = requiredEnv("MELHOR_ENVIO_CLIENT_ID");
     const clientSecret = requiredEnv("MELHOR_ENVIO_CLIENT_SECRET");
     const redirectUri = requiredEnv("MELHOR_ENVIO_REDIRECT_URI");
-    const apiUrl = requiredEnv("MELHOR_ENVIO_API_URL").replace(/\/$/, "");
+    const apiUrl = MELHOR_ENVIO_API_URL;
     const userAgent = requiredEnv("MELHOR_ENVIO_USER_AGENT");
     const client = createClient(supabaseUrl, serviceKey(), { auth: { persistSession: false, autoRefreshToken: false } });
 
@@ -156,3 +157,4 @@ Deno.serve(async (req) => {
     return json(req, { error: "A integração ainda não está disponível." }, 500);
   }
 });
+
