@@ -13,6 +13,7 @@ import './admin-orders-dashboard.css';
 import './admin-clients.css';
 import './admin-catalog.css';
 import './admin-session.css';
+import './admin-shipping.css';
 
 const SIZE_LABELS = ['PP', 'P', 'M', 'G', 'GG'];
 const OPTION_LABELS = { category: 'categoria', color: 'cor', print: 'estampa' };
@@ -106,6 +107,7 @@ export default function AdminApp() {
   const [shippingDraft, setShippingDraft] = useState({ originPostalCode:'', weightGrams:'500', packagingTareGrams:'100', heightCm:'10', widthCm:'20', lengthCm:'30', maxItems:'5', handlingDays:'1', markup:'0', melhorEnvioEnabled:false, correiosEnabled:false });
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsMessage, setSettingsMessage] = useState('');
+  const [melhorEnvioConnection, setMelhorEnvioConnection] = useState({ loading: true, connected: false, expiresAt: null });
   const [uploadingImages, setUploadingImages] = useState({});
   const [sessionWarningSeconds, setSessionWarningSeconds] = useState(null);
   const lastAdminActivity = useRef(Date.now());
@@ -116,6 +118,16 @@ export default function AdminApp() {
     checkSession();
     const { data: { subscription } } = supabase.auth.onAuthStateChange(() => checkSession());
     return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const result = params.get('melhor_envio');
+    if (!result) return;
+    setAdminSection('settings');
+    setSettingsMessage(result === 'connected' ? 'Melhor Envio conectado com sucesso.' : `Não foi possível conectar ao Melhor Envio${params.get('reason') ? `: ${params.get('reason')}` : '.'}`);
+    params.delete('melhor_envio'); params.delete('reason');
+    window.history.replaceState({}, '', `${window.location.pathname}${params.size ? `?${params}` : ''}`);
   }, []);
 
   useEffect(() => {
@@ -198,7 +210,35 @@ export default function AdminApp() {
     });
     setCatalogOptions(optionsResult.data ?? []);
     setOrders(ordersResult.data ?? []);
+    await loadMelhorEnvioStatus();
     setDashboardLoading(false);
+  }
+
+  async function loadMelhorEnvioStatus() {
+    setMelhorEnvioConnection((current) => ({ ...current, loading: true }));
+    const { data, error } = await supabase.functions.invoke('melhor-envio-oauth', { body: { action: 'status' } });
+    if (error || !data) { setMelhorEnvioConnection({ loading: false, connected: false, expiresAt: null }); return; }
+    setMelhorEnvioConnection({ loading: false, connected: Boolean(data.connected), expiresAt: data.expiresAt ?? null });
+  }
+
+  async function connectMelhorEnvio() {
+    setSettingsMessage('Abrindo a autorização segura do Melhor Envio...');
+    setMelhorEnvioConnection((current) => ({ ...current, loading: true }));
+    const { data, error } = await supabase.functions.invoke('melhor-envio-oauth', { body: { action: 'start' } });
+    if (error || !data?.authorizationUrl) {
+      setMelhorEnvioConnection((current) => ({ ...current, loading: false }));
+      setSettingsMessage('Não foi possível iniciar a autorização do Melhor Envio.'); return;
+    }
+    window.location.assign(data.authorizationUrl);
+  }
+
+  async function disconnectMelhorEnvio() {
+    if (!window.confirm('Desconectar a conta do Melhor Envio? O cálculo automático ficará indisponível até uma nova autorização.')) return;
+    setMelhorEnvioConnection((current) => ({ ...current, loading: true }));
+    const { data, error } = await supabase.functions.invoke('melhor-envio-oauth', { body: { action: 'disconnect' } });
+    if (error || data?.connected !== false) { setSettingsMessage('Não foi possível desconectar o Melhor Envio.'); await loadMelhorEnvioStatus(); return; }
+    setMelhorEnvioConnection({ loading: false, connected: false, expiresAt: null });
+    setSettingsMessage('Melhor Envio desconectado.');
   }
 
   async function checkSession() {
@@ -801,8 +841,9 @@ export default function AdminApp() {
                   <label>Máximo de vestidos/pacote<input type="number" min="1" step="1" value={shippingDraft.maxItems} onChange={(e) => setShippingDraft((current) => ({...current,maxItems:e.target.value}))}/></label>
                   <label>Prazo de preparação (dias)<input type="number" min="0" step="1" value={shippingDraft.handlingDays} onChange={(e) => setShippingDraft((current) => ({...current,handlingDays:e.target.value}))}/></label>
                   <label>Acréscimo no frete (%)<input type="number" min="0" step="0.01" value={shippingDraft.markup} onChange={(e) => setShippingDraft((current) => ({...current,markup:e.target.value}))}/></label></div>
-                <div className="admin-shipping-providers"><label><input type="checkbox" checked={shippingDraft.melhorEnvioEnabled} onChange={(e) => setShippingDraft((current) => ({...current,melhorEnvioEnabled:e.target.checked}))}/><div><strong>Melhor Envio</strong><span>Correios, Jadlog e demais serviços habilitados na conta.</span></div><em>{shippingDraft.melhorEnvioEnabled ? 'Preparado' : 'Desativado'}</em></label>
+                <div className="admin-shipping-providers"><label><input type="checkbox" checked={shippingDraft.melhorEnvioEnabled} onChange={(e) => setShippingDraft((current) => ({...current,melhorEnvioEnabled:e.target.checked}))}/><div><strong>Melhor Envio</strong><span>Correios, Jadlog e demais serviços habilitados na conta.</span></div><em>{melhorEnvioConnection.loading ? 'Verificando' : melhorEnvioConnection.connected ? 'Conectado' : shippingDraft.melhorEnvioEnabled ? 'Aguardando conexão' : 'Desativado'}</em></label>
                   <label><input type="checkbox" checked={shippingDraft.correiosEnabled} onChange={(e) => setShippingDraft((current) => ({...current,correiosEnabled:e.target.checked}))}/><div><strong>Correios direto</strong><span>Usará contrato e cartão de postagem próprios da loja.</span></div><em>{shippingDraft.correiosEnabled ? 'Preparado' : 'Desativado'}</em></label></div>
+                <div className={`admin-shipping-connection ${melhorEnvioConnection.connected ? 'connected' : ''}`}><div><strong>{melhorEnvioConnection.connected ? 'Conta do Melhor Envio conectada' : 'Conecte sua conta do Melhor Envio'}</strong><span>{melhorEnvioConnection.connected ? `Autorização válida${melhorEnvioConnection.expiresAt ? ` até ${new Date(melhorEnvioConnection.expiresAt).toLocaleDateString('pt-BR')}` : ''}. A renovação será feita automaticamente.` : 'A autorização é necessária para consultar valores e prazos reais no checkout.'}</span></div><button type="button" className={melhorEnvioConnection.connected ? 'admin-secondary-button' : 'admin-primary-button'} onClick={melhorEnvioConnection.connected ? disconnectMelhorEnvio : connectMelhorEnvio} disabled={melhorEnvioConnection.loading}>{melhorEnvioConnection.loading ? 'Verificando...' : melhorEnvioConnection.connected ? 'Desconectar' : 'Conectar ao Melhor Envio'}</button></div>
               </section>
               <button type="submit" className="admin-primary-button admin-settings-save" disabled={settingsSaving}><Save size={17}/>{settingsSaving ? 'Salvando...' : 'Salvar configurações'}</button>
             </form>
