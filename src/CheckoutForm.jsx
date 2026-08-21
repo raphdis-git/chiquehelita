@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Calculator, MessageCircle, Truck } from 'lucide-react';
-import { buildWhatsAppMessage, validateCustomer } from './data/order';
+import { buildWhatsAppMessage, formatPhone, formatTaxId, validateCustomer } from './data/order';
 import { supabase } from './lib/supabase';
 
 const initialCustomer = { name: '', email: '', taxId: '', phone: '', address: '', addressNumber: '', district: '', city: '', state: '', postalCode: '', fulfillment: '', payment: '', notes: '' };
@@ -61,8 +61,8 @@ export default function CheckoutForm({ whatsapp, lines, summary, money }) {
     <label>Nome completo<input required value={customer.name} onChange={(event) => update('name', event.target.value)} autoComplete="name" aria-invalid={Boolean(errors.name)}/>{errors.name && <small>{errors.name}</small>}</label>
     <label>E-mail <span>(opcional)</span><input type="email" value={customer.email} onChange={(event) => update('email', event.target.value)} autoComplete="email" aria-invalid={Boolean(errors.email)}/>{errors.email && <small>{errors.email}</small>}</label>
     <div className="checkout-location checkout-documents">
-      <label>CPF ou CNPJ <span>(somente números)</span><input required inputMode="numeric" value={customer.taxId} onChange={(event) => update('taxId', onlyDigits(event.target.value, 14))} autoComplete="off" aria-invalid={Boolean(errors.taxId)}/>{errors.taxId && <small>{errors.taxId}</small>}</label>
-      <label>Telefone <span>(somente números)</span><input required type="tel" inputMode="numeric" value={customer.phone} onChange={(event) => update('phone', onlyDigits(event.target.value, 11))} autoComplete="tel" aria-invalid={Boolean(errors.phone)}/>{errors.phone && <small>{errors.phone}</small>}</label>
+      <label>CPF ou CNPJ <span>(formatação automática)</span><input required inputMode="numeric" value={customer.taxId} onChange={(event) => update('taxId', formatTaxId(event.target.value))} autoComplete="off" maxLength="18" placeholder="000.000.000-00" aria-invalid={Boolean(errors.taxId)}/>{errors.taxId && <small>{errors.taxId}</small>}</label>
+      <label>Telefone <span>(com DDD)</span><input required type="tel" inputMode="numeric" value={customer.phone} onChange={(event) => update('phone', formatPhone(event.target.value))} autoComplete="tel" maxLength="15" placeholder="(62) 99999-9999" aria-invalid={Boolean(errors.phone)}/>{errors.phone && <small>{errors.phone}</small>}</label>
     </div>
     <label>Endereço (rua/avenida)<input required value={customer.address} onChange={(event) => update('address', event.target.value)} autoComplete="address-line1" aria-invalid={Boolean(errors.address)}/>{errors.address && <small>{errors.address}</small>}</label>
     <label>Quadra / lote / número<input required value={customer.addressNumber} onChange={(event) => update('addressNumber', event.target.value)} autoComplete="address-line2" placeholder="Caso não tenha número, informe S/N" aria-invalid={Boolean(errors.addressNumber)}/>{errors.addressNumber && <small>{errors.addressNumber}</small>}</label>
