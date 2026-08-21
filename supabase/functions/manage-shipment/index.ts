@@ -57,8 +57,9 @@ async function melhorEnvio(path: string, token: string, body: unknown) {
     };
     collect(data?.errors);
     const rawDetail = data?.message || data?.error || messages.join(" ");
+    const operation = path.endsWith("/cart") ? "adicionar a etiqueta ao carrinho" : "concluir esta etapa da etiqueta";
     const detail = /unauthorized|not authorized|não autorizad/i.test(String(rawDetail))
-      ? "A conexão atual não possui permissão para gerar etiquetas. Vá em Configurações, desconecte e conecte novamente o Melhor Envio."
+      ? `A conexão atual não possui permissão para ${operation}. Reconecte o Melhor Envio após a atualização das permissões.`
       : rawDetail;
     throw new Error(detail ? `Melhor Envio: ${String(detail).slice(0, 240)}` : "O Melhor Envio recusou esta operação.");
   }
