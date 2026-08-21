@@ -45,9 +45,14 @@ Deno.serve(async (req) => {
 
   const data = payload.data ?? {}, now = new Date().toISOString();
   const inventoryCommitted = order.inventory_committed_at && !order.inventory_released_at;
+  const selfTracking = data.self_tracking ? String(data.self_tracking).trim() : "";
+  const carrierTracking = data.tracking ? String(data.tracking).trim() : "";
+  const trackingUrl = data.tracking_url
+    ? String(data.tracking_url).replace("https: //", "https://")
+    : selfTracking ? `https://www.melhorrastreio.com.br/rastreio/${encodeURIComponent(selfTracking)}` : undefined;
   const changes: Record<string, unknown> = {
-    tracking_status: trackingStatus, tracking_code: data.tracking ? String(data.tracking) : undefined,
-    tracking_url: data.tracking_url ? String(data.tracking_url).replace("https: //", "https://") : data.self_tracking ? String(data.self_tracking) : undefined,
+    tracking_status: trackingStatus, tracking_code: carrierTracking || selfTracking || undefined,
+    tracking_url: trackingUrl,
     shipping_protocol: data.protocol ? String(data.protocol) : undefined, shipping_label_status: data.status ? String(data.status) : eventName.replace("order.", ""),
     shipping_last_event_at: now, tracking_updated_at: now, updated_at: now,
   };
