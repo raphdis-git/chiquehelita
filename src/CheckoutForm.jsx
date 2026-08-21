@@ -6,7 +6,7 @@ import { supabase } from './lib/supabase';
 const initialCustomer = { name: '', email: '', taxId: '', phone: '', address: '', addressNumber: '', district: '', city: '', state: '', postalCode: '', fulfillment: '', payment: '', notes: '' };
 const onlyDigits = (value, maxLength) => value.replace(/\D/g, '').slice(0, maxLength);
 
-export default function CheckoutForm({ whatsapp, lines, summary, money }) {
+export default function CheckoutForm({ whatsapp, lines, summary, money, onCompleted }) {
   const [customer, setCustomer] = useState(initialCustomer);
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
@@ -53,6 +53,7 @@ export default function CheckoutForm({ whatsapp, lines, summary, money }) {
     if (error || !data?.orderNumber) { setSubmitError(data?.error || 'Não foi possível registrar o pedido. Tente novamente.'); setSubmitting(false); return; }
     const message = buildWhatsAppMessage({ customer, lines, summary, money, orderNumber: data.orderNumber, shipping: data.shipping, productsAmount: data.productsAmount, totalAmount: data.totalAmount });
     window.open(`https://wa.me/${whatsapp}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
+    onCompleted?.({ orderNumber: data.orderNumber });
     setSubmitting(false);
   }
 
