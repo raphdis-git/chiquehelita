@@ -84,6 +84,7 @@ export default function AdminApp() {
   const [orders, setOrders] = useState([]);
   const [orderSaving, setOrderSaving] = useState('');
   const [trackingDrafts, setTrackingDrafts] = useState({});
+  const [shipmentErrors, setShipmentErrors] = useState({});
   const [orderSearch, setOrderSearch] = useState('');
   const [orderStatusFilter, setOrderStatusFilter] = useState('all');
   const [expandedOrderIds, setExpandedOrderIds] = useState([]);
@@ -299,7 +300,7 @@ export default function AdminApp() {
     const url = String(draft.url ?? '').trim().slice(0, 500);
     const externalId = String(draft.externalId ?? '').trim().slice(0, 100);
     if (url && !/^https:\/\/[^\s]+$/i.test(url)) { setMessage('O link de rastreio deve começar com https://'); return; }
-    setOrderSaving(order.id); setMessage('');
+    setOrderSaving(order.id); setMessage(''); setShipmentErrors((current) => ({ ...current, [order.id]: '' }));
     const now = new Date().toISOString();
     const targetOrderStatus = ['posted', 'in_transit', 'out_for_delivery'].includes(draft.status) ? 'shipped' : draft.status === 'delivered' ? 'completed' : null;
     let statusData = null;
@@ -330,9 +331,11 @@ export default function AdminApp() {
       if (!detail && error?.context?.json) {
         try { detail = (await error.context.json())?.error; } catch { detail = ''; }
       }
-      setMessage(detail || 'Não foi possível processar o envio no Melhor Envio.');
+      const feedback = detail || 'Não foi possível processar o envio no Melhor Envio.';
+      setShipmentErrors((current) => ({ ...current, [order.id]: feedback }));
     } else {
       setMessage(action === 'prepare' ? `Envio do pedido #${order.order_number} adicionado ao carrinho.` : `Etiqueta do pedido #${order.order_number} comprada e gerada com sucesso.`);
+      setShipmentErrors((current) => ({ ...current, [order.id]: '' }));
       await loadDashboard();
       if (action === 'purchase' && data?.labelUrl) window.open(data.labelUrl, '_blank', 'noopener,noreferrer');
     }
@@ -850,6 +853,7 @@ export default function AdminApp() {
                   <div className="admin-order-items">{(order.order_items ?? []).map((item) => <div key={item.id}><span>{item.quantity}x {item.product_name}<small>{item.color} · {item.print_pattern} · Tam. {item.size}</small></span><strong>{money(item.subtotal)}</strong></div>)}</div>
                   <div className="admin-order-totals"><span>Produtos</span><strong>{money(order.products_amount ?? order.total_amount)}</strong><span>Frete</span><strong>{order.fulfillment === 'delivery' ? money(order.shipping_price ?? 0) : 'Retirada'}</strong><b>Total do pedido</b><b>{money(order.total_amount)}</b></div>
                   {order.fulfillment === 'delivery' && <section className="admin-order-tracking"><div className="admin-order-tracking-heading"><div><strong>Acompanhamento da entrega</strong><span>{order.shipping_external_id ? 'Atualização automática vinculada ao Melhor Envio.' : 'Prepare a etiqueta para ativar as atualizações automáticas.'}</span></div><span className={`tracking-status tracking-${order.tracking_status ?? 'awaiting_shipment'}`}>{TRACKING_STATUSES[order.tracking_status ?? 'awaiting_shipment']}</span></div>{order.shipping_provider === 'melhor_envio' && <div className="admin-shipment-flow"><div><strong>Etiqueta do Melhor Envio</strong><span>{order.shipping_generated_at ? 'Etiqueta pronta para impressão.' : order.shipping_external_id ? 'No carrinho — aguardando compra e geração.' : order.inventory_committed_at ? 'Pedido confirmado — pronto para preparar.' : 'Confirme o pedido para reservar o estoque e liberar a etiqueta.'}</span></div><div>{order.shipping_label_url ? <a className="admin-secondary-button" href={order.shipping_label_url} target="_blank" rel="noreferrer">Abrir etiqueta</a> : order.shipping_external_id ? <button type="button" className="admin-primary-button" disabled={orderSaving === order.id} onClick={() => processShipment(order, 'purchase')}>{orderSaving === order.id ? 'Processando...' : 'Comprar e gerar etiqueta'}</button> : <button type="button" className="admin-primary-button" disabled={orderSaving === order.id || !order.inventory_committed_at || order.status === 'cancelled'} onClick={() => processShipment(order, 'prepare')}>{orderSaving === order.id ? 'Preparando...' : 'Adicionar ao carrinho de envios'}</button>}</div></div>}<div className="admin-order-tracking-fields"><label>Status da entrega<select value={trackingDrafts[order.id]?.status ?? 'awaiting_shipment'} onChange={(event) => setTrackingDrafts((current) => ({ ...current, [order.id]: { ...current[order.id], status: event.target.value } }))}>{Object.entries(TRACKING_STATUSES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label>Código de rastreio<input value={trackingDrafts[order.id]?.code ?? ''} onChange={(event) => setTrackingDrafts((current) => ({ ...current, [order.id]: { ...current[order.id], code: event.target.value } }))} placeholder="Ex.: AA123456789BR" maxLength="100"/></label><label className="tracking-url-field">Link de acompanhamento<input type="url" value={trackingDrafts[order.id]?.url ?? ''} onChange={(event) => setTrackingDrafts((current) => ({ ...current, [order.id]: { ...current[order.id], url: event.target.value } }))} placeholder="https://..." maxLength="500"/></label><label className="tracking-external-id">ID da etiqueta no Melhor Envio<input value={trackingDrafts[order.id]?.externalId ?? ''} onChange={(event) => setTrackingDrafts((current) => ({ ...current, [order.id]: { ...current[order.id], externalId: event.target.value } }))} placeholder="Preenchido automaticamente ao preparar a etiqueta" maxLength="100"/></label></div><div className="admin-order-tracking-actions">{order.shipping_label_status && <span>Último evento: <strong>{order.shipping_label_status}</strong></span>}{order.tracking_url && <a href={order.tracking_url} target="_blank" rel="noreferrer">Abrir rastreamento</a>}<button type="button" className="admin-primary-button" disabled={orderSaving === order.id} onClick={() => saveOrderTracking(order)}><Save size={15}/>{orderSaving === order.id ? 'Salvando...' : 'Salvar rastreio'}</button></div></section>}
+                  {shipmentErrors[order.id] && <div className="admin-shipment-error" role="alert"><strong>Não foi possível preparar a etiqueta</strong><span>{shipmentErrors[order.id]}</span><button type="button" onClick={() => setShipmentErrors((current) => ({ ...current, [order.id]: '' }))}>Fechar</button></div>}
                   {order.notes && <p className="admin-order-notes"><strong>Observações:</strong> {order.notes}</p>}
                   <footer><span>{order.total_quantity} peças</span><label>Status<select value={order.status} disabled={orderSaving === order.id} onChange={(event) => updateOrderStatus(order.id, event.target.value)}>{Object.entries(ORDER_STATUSES).map(([value,label]) => <option value={value} key={value}>{label}</option>)}</select></label></footer>
                 </div>}
