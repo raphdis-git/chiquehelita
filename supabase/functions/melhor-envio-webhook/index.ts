@@ -26,6 +26,9 @@ Deno.serve(async (req) => {
   let payload: any;
   try { payload = JSON.parse(rawBody); } catch { return json({ error: "JSON inválido." }, 400); }
   const eventName = String(payload?.event ?? ""), externalId = String(payload?.data?.id ?? "");
+  // O cadastro do webhook envia um POST de validação assinado, mas sem os
+  // campos de uma etiqueta. A assinatura já prova a origem da requisição.
+  if (!eventName && !externalId) return json({ received: true, validation: true });
   if (!eventName.startsWith("order.") || !externalId) return json({ error: "Evento inválido." }, 400);
 
   const client = createClient(requiredEnv("SUPABASE_URL"), serviceKey(), { auth: { persistSession: false, autoRefreshToken: false } });
