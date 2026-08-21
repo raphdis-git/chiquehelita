@@ -20,7 +20,8 @@ test('valida os dados obrigatórios do cliente', () => {
 test('gera mensagem organizada com cliente, itens e total', () => {
   const lines = [{ quantity: 2, product: { id: '1', name: 'Vestido Alice' }, variant: { color: 'Rosa', printPattern: 'Liso' }, size: { label: 'M' } }];
   const summary = { totalQuantity: 2, total: 180, items: [{ productId: '1', wholesale: false, unitPrice: 90 }] };
-  const message = buildWhatsAppMessage({ customer, lines, summary, money: (value) => `R$ ${value}` });
+  const shipping = { company: 'Correios', serviceName: 'PAC', price: 24.9, deliveryMinDays: 4, deliveryMaxDays: 6 };
+  const message = buildWhatsAppMessage({ customer, lines, summary, money: (value) => `R$ ${value}`, orderNumber: 42, shipping, productsAmount: 180, totalAmount: 204.9 });
   assert.match(message, /Maria Silva/);
   assert.match(message, /52998224725/);
   assert.match(message, /Rua das Flores/);
@@ -28,6 +29,9 @@ test('gera mensagem organizada com cliente, itens e total', () => {
   assert.match(message, /Goiânia - GO/);
   assert.match(message, /2x Vestido Alice/);
   assert.match(message, /Total dos produtos: R\$ 180/);
-  assert.match(message, /Frete: a combinar/);
+  assert.match(message, /Pedido nº 42/);
+  assert.match(message, /Correios \/ PAC/);
+  assert.match(message, /Frete: R\$ 24.9 \(4 a 6 dias úteis\)/);
+  assert.match(message, /Total do pedido: R\$ 204.9/);
 });
 
