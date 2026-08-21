@@ -29,9 +29,12 @@
 .admin-order-items span { font-weight: 700; }
 .admin-order-items small { display: block; color: var(--admin-muted); font-weight: 400; margin-top: 4px; }
 .admin-order-notes { margin: 0 19px 16px; padding: 11px; border-radius: 8px; background: #fff7fb; font-size: 12px; }
-.admin-order-details > footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 17px 19px; background: #fafafa; }
-.admin-order-details > footer label { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; }
-.admin-order-details > footer select { padding: 9px; border: 1px solid var(--admin-border); border-radius: 8px; background: #fff; }
+.admin-order-details > footer.admin-order-status-control { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin: 0 19px 18px; padding: 14px 15px; border: 1px solid var(--admin-border); border-radius: 10px; background: #fff7fb; color: var(--admin-text); }
+.admin-order-status-control > div { display: grid; gap: 4px; }
+.admin-order-status-control > div strong { font-size: 14px; }
+.admin-order-status-control > div span { max-width: 520px; color: var(--admin-muted); font-size: 11px; line-height: 1.4; }
+.admin-order-details > footer.admin-order-status-control label { display: grid; flex: 0 0 180px; gap: 5px; color: var(--admin-text); font-size: 11px; font-weight: 800; }
+.admin-order-details > footer.admin-order-status-control select { width: 100%; padding: 9px; border: 1px solid var(--admin-border); border-radius: 8px; background: #fff; color: var(--admin-text); }
 
 @media (max-width: 700px) {
   .admin-order-summary { align-items: flex-start; padding: 14px; }
@@ -41,7 +44,8 @@
   .admin-order-summary-total span { display: none; }
   .admin-order-summary-total svg { grid-column: auto; justify-self: end; }
   .admin-order-columns { grid-template-columns: 1fr; padding: 14px; }
-  .admin-order-details > footer { align-items: flex-start; flex-direction: column; }
-  .admin-order-details > footer label,
-  .admin-order-details > footer select { width: 100%; }
+  .admin-order-details > footer.admin-order-status-control { align-items: stretch; flex-direction: column; margin: 0 14px 14px; }
+  .admin-order-details > footer.admin-order-status-control label,
+  .admin-order-details > footer.admin-order-status-control select { width: 100%; }
 }
+
