@@ -152,7 +152,7 @@ Deno.serve(async (req) => {
     authorizationUrl.searchParams.set("redirect_uri", redirectUri);
     authorizationUrl.searchParams.set("response_type", "code");
     authorizationUrl.searchParams.set("state", state);
-    authorizationUrl.searchParams.set("scope", "shipping-calculate shipping-checkout shipping-generate shipping-print shipping-tracking shipping-cancel ecommerce-shipping");
+    authorizationUrl.searchParams.set("scope", "cart-read cart-write orders-read purchases-read shipping-calculate shipping-checkout shipping-generate shipping-print shipping-tracking shipping-cancel ecommerce-shipping");
     return json(req, { authorizationUrl: authorizationUrl.toString() });
   } catch (error) {
     console.error("melhor-envio-oauth", error instanceof Error ? error.message : error);
