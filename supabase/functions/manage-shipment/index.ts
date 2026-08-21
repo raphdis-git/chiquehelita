@@ -45,8 +45,8 @@ async function accessToken(client: ReturnType<typeof createClient>) {
   return String(data.access_token);
 }
 
-async function melhorEnvio(path: string, token: string, body: unknown) {
-  const response = await fetch(`${API_URL}${path}`, { method: "POST", headers: { "Accept": "application/json", "Content-Type": "application/json", "Authorization": `Bearer ${token}`, "User-Agent": requiredEnv("MELHOR_ENVIO_USER_AGENT") }, body: JSON.stringify(body) });
+async function melhorEnvio(path: string, token: string, body?: unknown, method = "POST") {
+  const response = await fetch(`${API_URL}${path}`, { method, headers: { "Accept": "application/json", "Content-Type": "application/json", "Authorization": `Bearer ${token}`, "User-Agent": requiredEnv("MELHOR_ENVIO_USER_AGENT") }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     const messages: string[] = [];
@@ -73,14 +73,34 @@ Deno.serve(async (req) => {
     const client = createClient(requiredEnv("SUPABASE_URL"), serviceKey(), { auth: { persistSession: false, autoRefreshToken: false } });
     if (!await authenticatedAdmin(req, client)) return reply(req, { error: "Acesso administrativo necessário." }, 403);
     const { action, orderId } = await req.json().catch(() => ({ action: "", orderId: "" }));
-    if (!["prepare", "purchase"].includes(action) || !orderId) return reply(req, { error: "Ação ou pedido inválido." }, 400);
+    if (!["prepare", "purchase", "sync"].includes(action) || !orderId) return reply(req, { error: "Ação ou pedido inválido." }, 400);
 
     const { data: order, error: orderError } = await client.from("orders").select("*,order_items(*)").eq("id", orderId).maybeSingle();
     if (orderError || !order) throw new Error("Pedido não encontrado.");
     if (order.fulfillment !== "delivery" || order.shipping_provider !== "melhor_envio") throw new Error("Este pedido não utiliza entrega pelo Melhor Envio.");
+    const token = await accessToken(client);
+
+    if (action === "sync") {
+      if (!order.shipping_external_id) throw new Error("Este pedido ainda não possui etiqueta no Melhor Envio.");
+      const response = await melhorEnvio(`/api/v2/me/orders/${encodeURIComponent(order.shipping_external_id)}`, token, undefined, "GET");
+      const shipment = response?.data ?? response;
+      const providerStatus = String(shipment?.status ?? "").toLowerCase();
+      const trackingStatuses: Record<string, string> = { pending: "awaiting_shipment", released: "awaiting_shipment", generated: "awaiting_shipment", received: "in_transit", posted: "posted", delivered: "delivered", cancelled: "exception", undelivered: "exception", paused: "exception", suspended: "exception" };
+      const selfTracking = String(shipment?.self_tracking ?? "").trim();
+      const carrierTracking = String(shipment?.tracking ?? "").trim();
+      const rawTrackingUrl = String(shipment?.tracking_url ?? "").replace("https: //", "https://").trim();
+      const trackingUrl = rawTrackingUrl || (selfTracking ? `https://www.melhorrastreio.com.br/rastreio/${encodeURIComponent(selfTracking)}` : "");
+      const now = new Date().toISOString();
+      const changes: Record<string, unknown> = { shipping_label_status: providerStatus || order.shipping_label_status, shipping_protocol: shipment?.protocol ? String(shipment.protocol) : order.shipping_protocol, tracking_status: trackingStatuses[providerStatus] ?? order.tracking_status, tracking_code: carrierTracking || selfTracking || order.tracking_code, tracking_url: trackingUrl || order.tracking_url, shipping_last_event_at: now, tracking_updated_at: now, updated_at: now };
+      if (providerStatus === "posted") { changes.shipped_at = shipment?.posted_at || order.shipped_at || now; if (order.inventory_committed_at && !order.inventory_released_at) changes.status = "shipped"; }
+      if (providerStatus === "delivered") { changes.delivered_at = shipment?.delivered_at || order.delivered_at || now; if (order.inventory_committed_at && !order.inventory_released_at) changes.status = "completed"; }
+      const { data: updated, error } = await client.from("orders").update(changes).eq("id", order.id).select("*").single();
+      if (error) throw new Error("O status foi consultado, mas não foi possível atualizar o pedido.");
+      return reply(req, { order: updated, providerStatus });
+    }
+
     if (order.status === "cancelled") throw new Error("Não é possível gerar etiqueta para um pedido cancelado.");
     if (!order.inventory_committed_at) throw new Error("Confirme o pedido antes de preparar o envio, para reservar o estoque.");
-    const token = await accessToken(client);
 
     if (action === "purchase") {
       if (!order.shipping_external_id) throw new Error("Primeiro adicione o envio ao carrinho.");
