@@ -1,6 +1,28 @@
 const clean = (value) => String(value ?? '').trim();
 const digits = (value) => clean(value).replace(/\D/g, '');
 
+export function formatTaxId(value) {
+  const document = digits(value).slice(0, 14);
+  if (document.length <= 11) return document
+    .replace(/^(\d{3})(\d)/, '$1.$2')
+    .replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3')
+    .replace(/^(\d{3})\.(\d{3})\.(\d{3})(\d)/, '$1.$2.$3-$4');
+  return document
+    .replace(/^(\d{2})(\d)/, '$1.$2')
+    .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
+    .replace(/^(\d{2})\.(\d{3})\.(\d{3})(\d)/, '$1.$2.$3/$4')
+    .replace(/^(\d{2})\.(\d{3})\.(\d{3})\/(\d{4})(\d)/, '$1.$2.$3/$4-$5');
+}
+
+export function formatPhone(value) {
+  const phone = digits(value).slice(0, 11);
+  if (!phone) return '';
+  if (phone.length < 3) return `(${phone}`;
+  const local = phone.slice(2);
+  const split = phone.length === 11 ? 5 : 4;
+  return `(${phone.slice(0, 2)}) ${local.slice(0, split)}${local.length > split ? `-${local.slice(split)}` : ''}`;
+}
+
 function hasValidCheckDigits(value, size) {
   const document = digits(value);
   if (document.length !== size || /^(\d)\1+$/.test(document)) return false;
