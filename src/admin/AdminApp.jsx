@@ -20,6 +20,7 @@ const OPTION_LABELS = { category: 'categoria', color: 'cor', print: 'estampa' };
 const IMAGE_BUCKET = 'product-images';
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 const ORDER_STATUSES = { new: 'Novo', contacted: 'Contatado', confirmed: 'Confirmado', preparing: 'Em preparação', shipped: 'Enviado', completed: 'Concluído', cancelled: 'Cancelado' };
+const TRACKING_STATUSES = { awaiting_shipment: 'Aguardando postagem', posted: 'Postado', in_transit: 'Em trânsito', out_for_delivery: 'Saiu para entrega', delivered: 'Entregue', exception: 'Ocorrência na entrega', returned: 'Devolvido' };
 
 function money(value) {
   return Number(value ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -82,6 +83,7 @@ export default function AdminApp() {
   const [products, setProducts] = useState([]);
   const [orders, setOrders] = useState([]);
   const [orderSaving, setOrderSaving] = useState('');
+  const [trackingDrafts, setTrackingDrafts] = useState({});
   const [orderSearch, setOrderSearch] = useState('');
   const [orderStatusFilter, setOrderStatusFilter] = useState('all');
   const [expandedOrderIds, setExpandedOrderIds] = useState([]);
@@ -209,7 +211,11 @@ export default function AdminApp() {
       melhorEnvioEnabled:Boolean(settingsResult.data?.melhor_envio_enabled), correiosEnabled:Boolean(settingsResult.data?.correios_enabled),
     });
     setCatalogOptions(optionsResult.data ?? []);
-    setOrders(ordersResult.data ?? []);
+    const loadedOrders = ordersResult.data ?? [];
+    setOrders(loadedOrders);
+    setTrackingDrafts(Object.fromEntries(loadedOrders.map((order) => [order.id, {
+      status: order.tracking_status ?? 'awaiting_shipment', code: order.tracking_code ?? '', url: order.tracking_url ?? '',
+    }])));
     await loadMelhorEnvioStatus();
     setDashboardLoading(false);
   }
@@ -283,6 +289,28 @@ export default function AdminApp() {
     const { error } = await supabase.from('orders').update({ status, updated_at: new Date().toISOString() }).eq('id', orderId);
     if (error) setMessage('Não foi possível atualizar o pedido.');
     else setOrders((current) => current.map((order) => order.id === orderId ? { ...order, status } : order));
+    setOrderSaving('');
+  }
+  async function saveOrderTracking(order) {
+    const draft = trackingDrafts[order.id] ?? { status: 'awaiting_shipment', code: '', url: '' };
+    const code = String(draft.code ?? '').trim().slice(0, 100);
+    const url = String(draft.url ?? '').trim().slice(0, 500);
+    if (url && !/^https:\/\/[^\s]+$/i.test(url)) { setMessage('O link de rastreio deve começar com https://'); return; }
+    setOrderSaving(order.id); setMessage('');
+    const now = new Date().toISOString();
+    const changes = {
+      tracking_status: draft.status, tracking_code: code || null, tracking_url: url || null, tracking_updated_at: now, updated_at: now,
+      ...(['posted', 'in_transit', 'out_for_delivery', 'delivered'].includes(draft.status) && !order.shipped_at ? { shipped_at: now } : {}),
+      ...(draft.status === 'delivered' && !order.delivered_at ? { delivered_at: now } : {}),
+      ...(['posted', 'in_transit', 'out_for_delivery'].includes(draft.status) ? { status: 'shipped' } : {}),
+      ...(draft.status === 'delivered' ? { status: 'completed' } : {}),
+    };
+    const { data, error } = await supabase.from('orders').update(changes).eq('id', order.id).select('*').single();
+    if (error) setMessage('Não foi possível salvar o acompanhamento da entrega.');
+    else {
+      setOrders((current) => current.map((item) => item.id === order.id ? { ...item, ...data, order_items: item.order_items } : item));
+      setMessage(`Rastreio do pedido #${order.order_number} atualizado.`);
+    }
     setOrderSaving('');
   }
   function toggleOrderDetails(orderId) {
@@ -793,6 +821,7 @@ export default function AdminApp() {
                   <div className="admin-order-columns"><div><h4>Cliente</h4><p><strong>{order.customer_name}</strong></p><p>{order.customer_email || 'E-mail não informado'}</p><p>{order.customer_phone}</p><p>CPF/CNPJ: {order.customer_tax_id}</p></div><div><h4>Entrega</h4><p>{order.address}, {order.address_number}</p><p>{order.district} · {order.city}/{order.state}</p><p>CEP {order.postal_code}</p><p>{order.fulfillment === 'delivery' ? 'Entrega' : 'Retirada'} · {order.payment_method}</p>{order.shipping_service_name && <p><strong>{order.shipping_company} · {order.shipping_service_name}</strong><br/>Prazo: {order.shipping_delivery_min_days === order.shipping_delivery_max_days ? `${order.shipping_delivery_max_days} dias úteis` : `${order.shipping_delivery_min_days} a ${order.shipping_delivery_max_days} dias úteis`}</p>}</div></div>
                   <div className="admin-order-items">{(order.order_items ?? []).map((item) => <div key={item.id}><span>{item.quantity}x {item.product_name}<small>{item.color} · {item.print_pattern} · Tam. {item.size}</small></span><strong>{money(item.subtotal)}</strong></div>)}</div>
                   <div className="admin-order-totals"><span>Produtos</span><strong>{money(order.products_amount ?? order.total_amount)}</strong><span>Frete</span><strong>{order.fulfillment === 'delivery' ? money(order.shipping_price ?? 0) : 'Retirada'}</strong><b>Total do pedido</b><b>{money(order.total_amount)}</b></div>
+                  {order.fulfillment === 'delivery' && <section className="admin-order-tracking"><div className="admin-order-tracking-heading"><div><strong>Acompanhamento da entrega</strong><span>Informe os dados recebidos ao postar o pacote.</span></div><span className={`tracking-status tracking-${order.tracking_status ?? 'awaiting_shipment'}`}>{TRACKING_STATUSES[order.tracking_status ?? 'awaiting_shipment']}</span></div><div className="admin-order-tracking-fields"><label>Status da entrega<select value={trackingDrafts[order.id]?.status ?? 'awaiting_shipment'} onChange={(event) => setTrackingDrafts((current) => ({ ...current, [order.id]: { ...current[order.id], status: event.target.value } }))}>{Object.entries(TRACKING_STATUSES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label>Código de rastreio<input value={trackingDrafts[order.id]?.code ?? ''} onChange={(event) => setTrackingDrafts((current) => ({ ...current, [order.id]: { ...current[order.id], code: event.target.value } }))} placeholder="Ex.: AA123456789BR" maxLength="100"/></label><label className="tracking-url-field">Link de acompanhamento<input type="url" value={trackingDrafts[order.id]?.url ?? ''} onChange={(event) => setTrackingDrafts((current) => ({ ...current, [order.id]: { ...current[order.id], url: event.target.value } }))} placeholder="https://..." maxLength="500"/></label></div><div className="admin-order-tracking-actions">{order.tracking_url && <a href={order.tracking_url} target="_blank" rel="noreferrer">Abrir rastreamento</a>}<button type="button" className="admin-primary-button" disabled={orderSaving === order.id} onClick={() => saveOrderTracking(order)}><Save size={15}/>{orderSaving === order.id ? 'Salvando...' : 'Salvar rastreio'}</button></div></section>}
                   {order.notes && <p className="admin-order-notes"><strong>Observações:</strong> {order.notes}</p>}
                   <footer><span>{order.total_quantity} peças</span><label>Status<select value={order.status} disabled={orderSaving === order.id} onChange={(event) => updateOrderStatus(order.id, event.target.value)}>{Object.entries(ORDER_STATUSES).map(([value,label]) => <option value={value} key={value}>{label}</option>)}</select></label></footer>
                 </div>}
