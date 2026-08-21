@@ -286,9 +286,9 @@ export default function AdminApp() {
 
   async function updateOrderStatus(orderId, status) {
     setOrderSaving(orderId); setMessage('');
-    const { error } = await supabase.from('orders').update({ status, updated_at: new Date().toISOString() }).eq('id', orderId);
-    if (error) setMessage('Não foi possível atualizar o pedido.');
-    else setOrders((current) => current.map((order) => order.id === orderId ? { ...order, status } : order));
+    const { error } = await supabase.rpc('update_order_status_with_inventory', { p_order_id: orderId, p_status: status });
+    if (error) setMessage(error.message || 'Não foi possível atualizar o pedido.');
+    else { setMessage(status === 'cancelled' ? 'Pedido cancelado. O estoque reservado foi devolvido quando aplicável.' : 'Status e estoque atualizados.'); await loadDashboard(); }
     setOrderSaving('');
   }
   async function saveOrderTracking(order) {
@@ -298,17 +298,22 @@ export default function AdminApp() {
     if (url && !/^https:\/\/[^\s]+$/i.test(url)) { setMessage('O link de rastreio deve começar com https://'); return; }
     setOrderSaving(order.id); setMessage('');
     const now = new Date().toISOString();
+    const targetOrderStatus = ['posted', 'in_transit', 'out_for_delivery'].includes(draft.status) ? 'shipped' : draft.status === 'delivered' ? 'completed' : null;
+    let statusData = null;
+    if (targetOrderStatus && order.status !== targetOrderStatus) {
+      const { data, error } = await supabase.rpc('update_order_status_with_inventory', { p_order_id: order.id, p_status: targetOrderStatus });
+      if (error) { setMessage(error.message || 'Não foi possível reservar o estoque para esta entrega.'); setOrderSaving(''); return; }
+      statusData = data;
+    }
     const changes = {
       tracking_status: draft.status, tracking_code: code || null, tracking_url: url || null, tracking_updated_at: now, updated_at: now,
       ...(['posted', 'in_transit', 'out_for_delivery', 'delivered'].includes(draft.status) && !order.shipped_at ? { shipped_at: now } : {}),
       ...(draft.status === 'delivered' && !order.delivered_at ? { delivered_at: now } : {}),
-      ...(['posted', 'in_transit', 'out_for_delivery'].includes(draft.status) ? { status: 'shipped' } : {}),
-      ...(draft.status === 'delivered' ? { status: 'completed' } : {}),
     };
     const { data, error } = await supabase.from('orders').update(changes).eq('id', order.id).select('*').single();
     if (error) setMessage('Não foi possível salvar o acompanhamento da entrega.');
     else {
-      setOrders((current) => current.map((item) => item.id === order.id ? { ...item, ...data, order_items: item.order_items } : item));
+      setOrders((current) => current.map((item) => item.id === order.id ? { ...item, ...(statusData ?? {}), ...data, order_items: item.order_items } : item));
       setMessage(`Rastreio do pedido #${order.order_number} atualizado.`);
     }
     setOrderSaving('');
