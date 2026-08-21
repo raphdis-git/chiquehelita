@@ -1,4 +1,3 @@
-
 .admin-order-metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
 .admin-order-metrics article{display:flex;flex-direction:column;gap:7px;padding:15px;border:1px solid var(--admin-border);border-radius:11px;background:#fafafa}
 .admin-order-metrics span{font-size:11px;color:var(--admin-muted)}
@@ -10,4 +9,5 @@
 .admin-order-filters>span{padding-bottom:10px;color:var(--admin-muted);font-size:11px}
 @media(max-width:1000px){.admin-order-metrics{grid-template-columns:repeat(2,1fr)}.admin-order-filters{grid-template-columns:1fr 180px}.admin-order-filters>span{grid-column:1/-1;padding:0}}
 @media(max-width:700px){.admin-order-metrics,.admin-order-filters{grid-template-columns:1fr}.admin-order-filters>span{grid-column:auto}}
+.admin-order-totals{display:grid;grid-template-columns:1fr auto;gap:6px 18px;margin-top:12px;padding:13px 15px;border:1px solid var(--admin-border);border-radius:10px;background:#fff7fb;font-size:12px}.admin-order-totals>*:nth-child(even){text-align:right}.admin-order-totals b{padding-top:7px;border-top:1px solid var(--admin-border);font-size:14px;color:var(--admin-pink-dark)}
 
