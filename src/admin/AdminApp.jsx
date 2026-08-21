@@ -327,8 +327,8 @@ export default function AdminApp() {
     const { data, error } = await supabase.functions.invoke('manage-shipment', { body: { action, orderId: order.id } });
     if (error || data?.error) {
       let detail = data?.error;
-      if (!detail && error?.context) {
-        try { detail = (await error.context.clone().json())?.error; } catch { detail = ''; }
+      if (!detail && error?.context?.json) {
+        try { detail = (await error.context.json())?.error; } catch { detail = ''; }
       }
       setMessage(detail || 'Não foi possível processar o envio no Melhor Envio.');
     } else {

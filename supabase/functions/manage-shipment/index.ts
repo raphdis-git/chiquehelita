@@ -49,7 +49,14 @@ async function melhorEnvio(path: string, token: string, body: unknown) {
   const response = await fetch(`${API_URL}${path}`, { method: "POST", headers: { "Accept": "application/json", "Content-Type": "application/json", "Authorization": `Bearer ${token}`, "User-Agent": requiredEnv("MELHOR_ENVIO_USER_AGENT") }, body: JSON.stringify(body) });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const detail = data?.message || data?.error || Object.values(data?.errors ?? {}).flat().join(" ");
+    const messages: string[] = [];
+    const collect = (value: unknown) => {
+      if (typeof value === "string") messages.push(value);
+      else if (Array.isArray(value)) value.forEach(collect);
+      else if (value && typeof value === "object") Object.values(value).forEach(collect);
+    };
+    collect(data?.errors);
+    const detail = data?.message || data?.error || messages.join(" ");
     throw new Error(detail ? `Melhor Envio: ${String(detail).slice(0, 240)}` : "O Melhor Envio recusou esta operação.");
   }
   return data;
