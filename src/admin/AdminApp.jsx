@@ -326,7 +326,11 @@ export default function AdminApp() {
     setOrderSaving(order.id); setMessage('');
     const { data, error } = await supabase.functions.invoke('manage-shipment', { body: { action, orderId: order.id } });
     if (error || data?.error) {
-      setMessage(data?.error || 'Não foi possível processar o envio no Melhor Envio.');
+      let detail = data?.error;
+      if (!detail && error?.context) {
+        try { detail = (await error.context.clone().json())?.error; } catch { detail = ''; }
+      }
+      setMessage(detail || 'Não foi possível processar o envio no Melhor Envio.');
     } else {
       setMessage(action === 'prepare' ? `Envio do pedido #${order.order_number} adicionado ao carrinho.` : `Etiqueta do pedido #${order.order_number} comprada e gerada com sucesso.`);
       await loadDashboard();
