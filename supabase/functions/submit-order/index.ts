@@ -63,6 +63,11 @@ Deno.serve(async (req) => {
     if (orderError) throw orderError;
     const { error: itemsError } = await client.from("order_items").insert(items.map((item:any)=>({ ...item, order_id:order.id })));
     if (itemsError) { await client.from("orders").delete().eq("id", order.id); throw itemsError; }
+    const { error: inventoryError } = await client.rpc("commit_order_inventory", { p_order_id: order.id });
+    if (inventoryError) {
+      await client.from("orders").delete().eq("id", order.id);
+      throw new Error(inventoryError.message.includes("Estoque insuficiente") ? inventoryError.message : "Não foi possível reservar o estoque do pedido.");
+    }
     return reply({ orderNumber: order.order_number, productsAmount, shipping: selectedShipping, totalAmount });
   } catch (error) { return reply({ error: error instanceof Error ? error.message : "Não foi possível registrar o pedido." }, 400); }
 });
