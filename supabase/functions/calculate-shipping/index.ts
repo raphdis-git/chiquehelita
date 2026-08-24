@@ -103,7 +103,7 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return reply(req, { error: "Método não permitido." }, 405);
 
   try {
-    const { postalCode, lines } = await req.json();
+    const { postalCode, destinationAddress, lines } = await req.json();
     const destination = String(postalCode ?? "").replace(/\D/g, "");
     if (!/^\d{8}$/.test(destination) || !Array.isArray(lines) || lines.length < 1 || lines.length > 50) return reply(req, { error: "Informe um CEP válido e produtos para calcular o frete." }, 400);
 
@@ -115,7 +115,7 @@ Deno.serve(async (req) => {
     if (normalizedLines.some((line: any) => !line.productId || !line.variantId || !Number.isInteger(line.quantity) || line.quantity < 1 || line.quantity > 100)) return reply(req, { error: "Os itens do carrinho são inválidos." }, 400);
 
     const client = createClient(requiredEnv("SUPABASE_URL"), serviceKey(), { auth: { persistSession: false, autoRefreshToken: false } });
-    const { data: settings, error: settingsError } = await client.from("store_settings").select("origin_postal_code,package_weight_grams,packaging_tare_grams,package_height_cm,package_width_cm,package_length_cm,shipping_handling_days,shipping_markup_percent,melhor_envio_enabled,local_delivery_enabled,local_delivery_price,local_delivery_days,local_delivery_city,local_delivery_state").limit(1).single();
+    const { data: settings, error: settingsError } = await client.from("store_settings").select("origin_postal_code,package_weight_grams,packaging_tare_grams,package_height_cm,package_width_cm,package_length_cm,shipping_handling_days,shipping_markup_percent,melhor_envio_enabled,local_delivery_enabled,local_delivery_days,local_delivery_origin_postal_code,local_delivery_origin_address,local_delivery_origin_number,local_delivery_origin_district,local_delivery_origin_city,local_delivery_origin_state,local_delivery_cities,local_delivery_distance_ranges").limit(1).single();
     if (settingsError || (!settings?.melhor_envio_enabled && !settings?.local_delivery_enabled)) throw new Error("O frete automático ainda não está disponível.");
     if (settings.melhor_envio_enabled && !/^\d{8}$/.test(String(settings.origin_postal_code ?? ""))) throw new Error("O CEP de origem da loja precisa ser configurado.");
 
@@ -142,15 +142,37 @@ Deno.serve(async (req) => {
     if (products.some((product: any) => !product.width || !product.height || !product.length || !product.weight)) throw new Error("Complete o peso e as dimensões dos produtos ou os valores padrão da loja.");
 
     const localOptions: any[] = [];
-    if (settings.local_delivery_enabled && settings.local_delivery_city && /^[A-Za-z]{2}$/.test(String(settings.local_delivery_state ?? ""))) {
+    if (settings.local_delivery_enabled && Array.isArray(settings.local_delivery_cities) && Array.isArray(settings.local_delivery_distance_ranges)) {
       try {
         const addressResponse = await fetch(`https://viacep.com.br/ws/${destination}/json/`);
         const address = await addressResponse.json().catch(() => ({}));
         const normalize = (value: unknown) => String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
-        if (!address.erro && normalize(address.localidade) === normalize(settings.local_delivery_city) && String(address.uf ?? "").toUpperCase() === String(settings.local_delivery_state).toUpperCase()) {
-          localOptions.push({
-            provider: "local_delivery", serviceId: "local_delivery", serviceName: "Entrega local / motoboy",
-            company: "CHIQUEHELITA", companyPicture: null, price: Number(settings.local_delivery_price || 0),
+        const allowedCity = settings.local_delivery_cities.some((city: unknown) => normalize(city) === normalize(address.localidade));
+        const destinationState = String(address.uf ?? "").toUpperCase();
+        const configuredState = String(settings.local_delivery_origin_state ?? "").toUpperCase();
+        if (!address.erro && allowedCity && destinationState === configuredState) {
+          const field = (name: string) => String(destinationAddress?.[name] ?? "").trim().slice(0, 120);
+          const origin = [settings.local_delivery_origin_address, settings.local_delivery_origin_number, settings.local_delivery_origin_district, settings.local_delivery_origin_city, settings.local_delivery_origin_state, settings.local_delivery_origin_postal_code].filter(Boolean).join(", ");
+          const destinationFull = [field("address") || address.logradouro, field("number"), field("district") || address.bairro, address.localidade, address.uf, destination].filter(Boolean).join(", ");
+          const mapsKey = Deno.env.get("GOOGLE_MAPS_ROUTES_API_KEY")?.trim();
+          if (!mapsKey) throw new Error("A chave de cálculo de rotas da entrega local não está configurada.");
+          const routeResponse = await fetch("https://routes.googleapis.com/directions/v2:computeRoutes", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-Goog-Api-Key": mapsKey, "X-Goog-FieldMask": "routes.distanceMeters" },
+            body: JSON.stringify({ origin:{ address:origin }, destination:{ address:destinationFull }, travelMode:"DRIVE", routingPreference:"TRAFFIC_UNAWARE" }),
+          });
+          const route = await routeResponse.json().catch(() => ({}));
+          const distanceMeters = Number(route?.routes?.[0]?.distanceMeters);
+          if (!routeResponse.ok || !Number.isFinite(distanceMeters) || distanceMeters <= 0) throw new Error("Não foi possível calcular a rota da entrega local.");
+          const distanceKm = distanceMeters / 1000;
+          const ranges = settings.local_delivery_distance_ranges
+            .map((range: any) => ({ maxKm:Number(range?.maxKm), price:Number(range?.price) }))
+            .filter((range: any) => Number.isFinite(range.maxKm) && range.maxKm > 0 && Number.isFinite(range.price) && range.price >= 0)
+            .sort((a: any, b: any) => a.maxKm - b.maxKm);
+          const selectedRange = ranges.find((range: any) => distanceKm <= range.maxKm + 0.0001);
+          if (selectedRange) localOptions.push({
+            provider: "local_delivery", serviceId: "local_delivery", serviceName: `Motoboy · ${distanceKm.toFixed(1).replace(".", ",")} km`,
+            company: "Entrega local", companyPicture: null, price: selectedRange.price, distanceKm:Number(distanceKm.toFixed(1)),
             deliveryMinDays: Number(settings.local_delivery_days || 1), deliveryMaxDays: Number(settings.local_delivery_days || 1),
           });
         }
@@ -208,4 +230,3 @@ Deno.serve(async (req) => {
     return reply(req, { error: error instanceof Error ? error.message : "Não foi possível calcular o frete." }, 400);
   }
 });
-
