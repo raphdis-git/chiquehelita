@@ -52,3 +52,7 @@
   .admin-order-details > footer.admin-order-status-control select { width: 100%; }
 }
 
+.admin-order-requote{display:grid;grid-template-columns:1fr auto;gap:13px;align-items:center;margin:14px 19px;padding:16px;border:1px solid #efabd0;border-radius:12px;background:#fff8fc}.admin-order-requote>div:first-child{display:grid;gap:4px}.admin-order-requote>div:first-child span{color:var(--admin-muted);font-size:11px}.admin-order-requote>.admin-secondary-button{display:inline-flex;align-items:center;gap:7px}.admin-order-quote-options{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.admin-order-quote-options button{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px;border:1px solid var(--admin-border);border-radius:9px;background:#fff;color:var(--admin-text);text-align:left;cursor:pointer}.admin-order-quote-options button:hover{border-color:var(--admin-pink);box-shadow:0 0 0 3px #f6068714}.admin-order-quote-options span{display:grid;gap:3px}.admin-order-quote-options small{color:var(--admin-muted)}.admin-order-quote-options b{color:var(--admin-pink);white-space:nowrap}
+
+@media (max-width:700px){.admin-order-requote{grid-template-columns:1fr;margin:14px;padding:13px}.admin-order-requote>.admin-secondary-button{justify-content:center}.admin-order-quote-options{grid-column:auto;grid-template-columns:1fr}}
+
