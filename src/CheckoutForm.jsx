@@ -26,6 +26,12 @@ export default function CheckoutForm({ whatsapp, lines, summary, money, onComple
   const [postalCodeLoading, setPostalCodeLoading] = useState(false);
   const [postalCodeError, setPostalCodeError] = useState('');
   const update = (field, value) => setCustomer((current) => ({ ...current, [field]: value }));
+  const updatePostalCode = (value) => {
+    const postalCode = onlyDigits(value, 8);
+    setCustomer((current) => current.postalCode === postalCode ? current : ({
+      ...current, postalCode, address: '', addressNumber: '', district: '', city: '', state: '',
+    }));
+  };
   const payloadLines = lines.map((line) => ({ productId: line.product.id, variantId: line.variant.id, size: line.size.label, quantity: line.quantity }));
   const orderTotal = summary.total + (selectedShipping?.price ?? 0);
 
@@ -43,10 +49,10 @@ export default function CheckoutForm({ whatsapp, lines, summary, money, onComple
         if (address.erro) { setPostalCodeError('CEP não encontrado. Confira os números informados.'); return; }
         setCustomer((current) => ({
           ...current,
-          address: address.logradouro || current.address,
-          district: address.bairro || current.district,
-          city: address.localidade || current.city,
-          state: address.uf || current.state,
+          address: address.logradouro || '',
+          district: address.bairro || '',
+          city: address.localidade || '',
+          state: address.uf || '',
         }));
         setErrors((current) => ({ ...current, postalCode: undefined, address: undefined, district: undefined, city: undefined, state: undefined }));
       } catch (error) {
@@ -113,7 +119,7 @@ export default function CheckoutForm({ whatsapp, lines, summary, money, onComple
     </div></section>}
 
     {step === 1 && <section className="checkout-step"><div className="checkout-heading"><strong>Entrega</strong><span>Digite o CEP para preenchermos o endereço automaticamente.</span></div><div className="checkout-fields">
-      <label className="wide checkout-postal-code">CEP <span>(somente números)</span><input required inputMode="numeric" value={customer.postalCode} onChange={(event) => update('postalCode', onlyDigits(event.target.value, 8))} autoComplete="postal-code" placeholder="00000000" aria-invalid={Boolean(errors.postalCode || postalCodeError)}/>{postalCodeLoading && <small className="postal-code-status">Consultando endereço...</small>}{postalCodeError && <small>{postalCodeError}</small>}{errors.postalCode && !postalCodeError && <small>{errors.postalCode}</small>}</label>
+      <label className="wide checkout-postal-code">CEP <span>(somente números)</span><input required inputMode="numeric" value={customer.postalCode} onChange={(event) => updatePostalCode(event.target.value)} autoComplete="postal-code" placeholder="00000000" aria-invalid={Boolean(errors.postalCode || postalCodeError)}/>{postalCodeLoading && <small className="postal-code-status">Consultando endereço...</small>}{postalCodeError && <small>{postalCodeError}</small>}{errors.postalCode && !postalCodeError && <small>{errors.postalCode}</small>}</label>
       <label className="wide">Endereço (rua/avenida)<input required value={customer.address} onChange={(event) => update('address', event.target.value)} autoComplete="address-line1" aria-invalid={Boolean(errors.address)}/>{errors.address && <small>{errors.address}</small>}</label>
       <label>Quadra / lote / número<input required value={customer.addressNumber} onChange={(event) => update('addressNumber', event.target.value)} autoComplete="address-line2" placeholder="Número ou S/N" aria-invalid={Boolean(errors.addressNumber)}/>{errors.addressNumber && <small>{errors.addressNumber}</small>}</label>
       <label>Bairro/setor<input required value={customer.district} onChange={(event) => update('district', event.target.value)} aria-invalid={Boolean(errors.district)}/>{errors.district && <small>{errors.district}</small>}</label>
