@@ -166,7 +166,16 @@ Deno.serve(async (req) => {
         deliveryMaxDays: Math.max(0, Number(range.max ?? deliveryTime)) + handling,
       };
     }).sort((a: any, b: any) => a.price - b.price);
-    if (!options.length) return reply(req, { error: "Nenhuma modalidade de entrega está disponível para este CEP." }, 422);
+    if (!options.length) {
+      const providerMessages = [...new Set(result
+        .map((item: any) => String(item?.error ?? "").trim())
+        .filter(Boolean))];
+      console.error("calculate-shipping:no-options", JSON.stringify({ destination, providerMessages }));
+      const detail = providerMessages.length
+        ? providerMessages.join(" ")
+        : "Nenhuma transportadora atende este CEP com o pacote informado.";
+      return reply(req, { error: `Frete indisponível: ${detail}` });
+    }
     return reply(req, { options });
   } catch (error) {
     console.error("calculate-shipping", error instanceof Error ? error.message : error);
