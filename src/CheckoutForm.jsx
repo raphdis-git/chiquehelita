@@ -23,12 +23,40 @@ export default function CheckoutForm({ whatsapp, lines, summary, money, onComple
   const [selectedShipping, setSelectedShipping] = useState(null);
   const [shippingLoading, setShippingLoading] = useState(false);
   const [shippingError, setShippingError] = useState('');
+  const [postalCodeLoading, setPostalCodeLoading] = useState(false);
+  const [postalCodeError, setPostalCodeError] = useState('');
   const update = (field, value) => setCustomer((current) => ({ ...current, [field]: value }));
   const payloadLines = lines.map((line) => ({ productId: line.product.id, variantId: line.variant.id, size: line.size.label, quantity: line.quantity }));
   const orderTotal = summary.total + (selectedShipping?.price ?? 0);
 
   useEffect(() => { sessionStorage.setItem(draftKey, JSON.stringify(customer)); }, [customer]);
   useEffect(() => { setShippingOptions([]); setSelectedShipping(null); setShippingError(''); }, [customer.postalCode, customer.fulfillment, lines]);
+  useEffect(() => {
+    if (!/^\d{8}$/.test(customer.postalCode)) { setPostalCodeError(''); setPostalCodeLoading(false); return undefined; }
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setPostalCodeLoading(true); setPostalCodeError('');
+      try {
+        const response = await fetch(`https://viacep.com.br/ws/${customer.postalCode}/json/`, { signal: controller.signal });
+        if (!response.ok) throw new Error('lookup_failed');
+        const address = await response.json();
+        if (address.erro) { setPostalCodeError('CEP não encontrado. Confira os números informados.'); return; }
+        setCustomer((current) => ({
+          ...current,
+          address: address.logradouro || current.address,
+          district: address.bairro || current.district,
+          city: address.localidade || current.city,
+          state: address.uf || current.state,
+        }));
+        setErrors((current) => ({ ...current, postalCode: undefined, address: undefined, district: undefined, city: undefined, state: undefined }));
+      } catch (error) {
+        if (error.name !== 'AbortError') setPostalCodeError('Não foi possível consultar o CEP agora. Preencha o endereço manualmente.');
+      } finally {
+        if (!controller.signal.aborted) setPostalCodeLoading(false);
+      }
+    }, 300);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [customer.postalCode]);
 
   function validateStep(targetStep) {
     const allErrors = validateCustomer(customer);
@@ -84,13 +112,13 @@ export default function CheckoutForm({ whatsapp, lines, summary, money, onComple
       <label>Telefone <span>(com DDD)</span><input required type="tel" inputMode="numeric" value={customer.phone} onChange={(event) => update('phone', formatPhone(event.target.value))} autoComplete="tel" maxLength="15" placeholder="(62) 99999-9999" aria-invalid={Boolean(errors.phone)}/>{errors.phone && <small>{errors.phone}</small>}</label>
     </div></section>}
 
-    {step === 1 && <section className="checkout-step"><div className="checkout-heading"><strong>Entrega</strong><span>Informe o endereço e escolha como deseja receber o pedido.</span></div><div className="checkout-fields">
+    {step === 1 && <section className="checkout-step"><div className="checkout-heading"><strong>Entrega</strong><span>Digite o CEP para preenchermos o endereço automaticamente.</span></div><div className="checkout-fields">
+      <label className="wide checkout-postal-code">CEP <span>(somente números)</span><input required inputMode="numeric" value={customer.postalCode} onChange={(event) => update('postalCode', onlyDigits(event.target.value, 8))} autoComplete="postal-code" placeholder="00000000" aria-invalid={Boolean(errors.postalCode || postalCodeError)}/>{postalCodeLoading && <small className="postal-code-status">Consultando endereço...</small>}{postalCodeError && <small>{postalCodeError}</small>}{errors.postalCode && !postalCodeError && <small>{errors.postalCode}</small>}</label>
       <label className="wide">Endereço (rua/avenida)<input required value={customer.address} onChange={(event) => update('address', event.target.value)} autoComplete="address-line1" aria-invalid={Boolean(errors.address)}/>{errors.address && <small>{errors.address}</small>}</label>
       <label>Quadra / lote / número<input required value={customer.addressNumber} onChange={(event) => update('addressNumber', event.target.value)} autoComplete="address-line2" placeholder="Número ou S/N" aria-invalid={Boolean(errors.addressNumber)}/>{errors.addressNumber && <small>{errors.addressNumber}</small>}</label>
       <label>Bairro/setor<input required value={customer.district} onChange={(event) => update('district', event.target.value)} aria-invalid={Boolean(errors.district)}/>{errors.district && <small>{errors.district}</small>}</label>
       <label>Cidade<input required value={customer.city} onChange={(event) => update('city', event.target.value)} autoComplete="address-level2" aria-invalid={Boolean(errors.city)}/>{errors.city && <small>{errors.city}</small>}</label>
       <label>UF<input required value={customer.state} onChange={(event) => update('state', event.target.value.toUpperCase().slice(0, 2))} maxLength="2" placeholder="GO" aria-invalid={Boolean(errors.state)}/>{errors.state && <small>{errors.state}</small>}</label>
-      <label>CEP <span>(somente números)</span><input required inputMode="numeric" value={customer.postalCode} onChange={(event) => update('postalCode', onlyDigits(event.target.value, 8))} autoComplete="postal-code" aria-invalid={Boolean(errors.postalCode)}/>{errors.postalCode && <small>{errors.postalCode}</small>}</label>
       <label>Como deseja receber?<select required value={customer.fulfillment} onChange={(event) => update('fulfillment', event.target.value)} aria-invalid={Boolean(errors.fulfillment)}><option value="">Selecione</option><option value="delivery">Entrega no endereço informado</option><option value="pickup">Retirada — detalhes a combinar</option></select>{errors.fulfillment && <small>{errors.fulfillment}</small>}</label>
     </div>{customer.fulfillment === 'delivery' && <section className="shipping-quote" aria-label="Opções de frete"><div className="shipping-quote-heading"><div><Truck size={20}/><span><strong>Frete para seu CEP</strong><small>Valores e prazos calculados automaticamente</small></span></div><button type="button" onClick={calculateShipping} disabled={shippingLoading}><Calculator size={16}/>{shippingLoading ? 'Calculando...' : shippingOptions.length ? 'Recalcular' : 'Calcular frete'}</button></div>{shippingError && <p className="checkout-error">{shippingError}</p>}{shippingOptions.length > 0 && <div className="shipping-options">{shippingOptions.map((option) => { const checked = selectedShipping?.serviceId === option.serviceId; const deadline = option.deliveryMinDays === option.deliveryMaxDays ? `${option.deliveryMaxDays} dias úteis` : `${option.deliveryMinDays} a ${option.deliveryMaxDays} dias úteis`; return <label key={option.serviceId} className={checked ? 'shipping-option selected' : 'shipping-option'}><input type="radio" name="shipping" checked={checked} onChange={() => { setSelectedShipping(option); setErrors((current) => ({ ...current, shipping: undefined })); }}/><span><strong>{option.company} · {option.serviceName}</strong><small>Entrega estimada em {deadline}</small></span><b>{money(option.price)}</b></label>; })}</div>}{errors.shipping && <small className="shipping-validation">{errors.shipping}</small>}</section>}</section>}
 
