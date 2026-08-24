@@ -60,7 +60,6 @@ export function validateCustomer(customer) {
   if (!/^\d{8}$/.test(digits(customer.postalCode))) errors.postalCode = 'Informe os 8 números do CEP.';
   if (!['delivery', 'pickup'].includes(customer.fulfillment)) errors.fulfillment = 'Escolha entrega ou retirada.';
   if (!clean(customer.payment)) errors.payment = 'Escolha a forma de pagamento.';
-  if (clean(customer.notes).length < 2) errors.notes = 'Informe uma observação ou escreva “Nenhuma”.';
   return errors;
 }
 
