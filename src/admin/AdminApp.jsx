@@ -328,7 +328,9 @@ export default function AdminApp() {
   }
   async function updateOrderPostalCode(value) {
     const postalCode = value.replace(/\D/g, '').slice(0, 8);
-    updateOrderEdit('postalCode', postalCode);
+    setOrderEditDraft((current) => current?.postalCode === postalCode ? current : ({
+      ...current, postalCode, address: '', addressNumber: '', district: '', city: '', state: '',
+    }));
     orderPostalLookupController.current?.abort();
     if (postalCode.length !== 8) { setOrderPostalLookup({ loading: false, error: '' }); return; }
     const controller = new AbortController();
@@ -339,7 +341,7 @@ export default function AdminApp() {
       if (!response.ok) throw new Error('lookup_failed');
       const address = await response.json();
       if (address.erro) { setOrderPostalLookup({ loading: false, error: 'CEP não encontrado.' }); return; }
-      setOrderEditDraft((current) => current ? ({ ...current, address: address.logradouro || current.address, district: address.bairro || current.district, city: address.localidade || current.city, state: address.uf || current.state }) : current);
+      setOrderEditDraft((current) => current ? ({ ...current, address: address.logradouro || '', district: address.bairro || '', city: address.localidade || '', state: address.uf || '' }) : current);
       setOrderPostalLookup({ loading: false, error: '' });
     } catch (error) {
       if (error.name !== 'AbortError') setOrderPostalLookup({ loading: false, error: 'Consulta indisponível. Preencha o endereço manualmente.' });
