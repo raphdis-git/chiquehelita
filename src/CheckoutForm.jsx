@@ -47,7 +47,12 @@ export default function CheckoutForm({ whatsapp, lines, summary, money, onComple
     if (!/^\d{8}$/.test(customer.postalCode)) { setShippingError('Informe os 8 números do CEP antes de calcular.'); return; }
     setShippingLoading(true); setShippingError('');
     const { data, error } = await supabase.functions.invoke('calculate-shipping', { body: { postalCode: customer.postalCode, lines: payloadLines } });
-    if (error || !data?.options?.length) { setShippingError(data?.error || 'Não foi possível calcular o frete. Tente novamente.'); setShippingOptions([]); }
+    let errorMessage = data?.error;
+    if (!errorMessage && error?.context instanceof Response) {
+      const responseBody = await error.context.clone().json().catch(() => null);
+      errorMessage = responseBody?.error;
+    }
+    if (error || !data?.options?.length) { setShippingError(errorMessage || 'Não foi possível calcular o frete. Tente novamente.'); setShippingOptions([]); }
     else setShippingOptions(data.options);
     setShippingLoading(false);
   }
