@@ -83,6 +83,9 @@ export default function AdminApp() {
   const [products, setProducts] = useState([]);
   const [orders, setOrders] = useState([]);
   const [orderSaving, setOrderSaving] = useState('');
+  const [editingOrderId, setEditingOrderId] = useState(null);
+  const [orderEditDraft, setOrderEditDraft] = useState(null);
+  const [orderEditError, setOrderEditError] = useState('');
   const [trackingDrafts, setTrackingDrafts] = useState({});
   const [shipmentErrors, setShipmentErrors] = useState({});
   const [orderSearch, setOrderSearch] = useState('');
@@ -301,6 +304,52 @@ export default function AdminApp() {
     const { error } = await supabase.rpc('update_order_status_with_inventory', { p_order_id: orderId, p_status: status });
     if (error) setMessage(error.message || 'Não foi possível atualizar o pedido.');
     else { setMessage(status === 'cancelled' ? 'Pedido cancelado. O estoque reservado foi devolvido quando aplicável.' : 'Status e estoque atualizados.'); await loadDashboard(); }
+    setOrderSaving('');
+  }
+  function startEditingOrder(order) {
+    setEditingOrderId(order.id);
+    setOrderEditError('');
+    setOrderEditDraft({
+      customerName: order.customer_name ?? '', customerEmail: order.customer_email ?? '',
+      customerPhone: order.customer_phone ?? '', customerTaxId: order.customer_tax_id ?? '',
+      address: order.address ?? '', addressNumber: order.address_number ?? '', district: order.district ?? '',
+      city: order.city ?? '', state: order.state ?? '', postalCode: order.postal_code ?? '',
+      paymentMethod: order.payment_method ?? '', notes: order.notes ?? '',
+    });
+  }
+  function updateOrderEdit(field, value) {
+    setOrderEditDraft((current) => ({ ...current, [field]: value }));
+  }
+  async function saveOrderEdit(event, order) {
+    event.preventDefault();
+    const draft = orderEditDraft;
+    if (!draft) return;
+    const taxId = draft.customerTaxId.replace(/\D/g, '');
+    const phone = draft.customerPhone.replace(/\D/g, '');
+    const postalCode = draft.postalCode.replace(/\D/g, '');
+    const email = draft.customerEmail.trim();
+    if (draft.customerName.trim().length < 3 || ![11, 14].includes(taxId.length) || ![10, 11].includes(phone.length) || (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) {
+      setOrderEditError('Confira o nome, e-mail, CPF/CNPJ e telefone.'); return;
+    }
+    if (!order.shipping_external_id && (draft.address.trim().length < 3 || !draft.addressNumber.trim() || draft.district.trim().length < 2 || draft.city.trim().length < 2 || !/^[A-Za-z]{2}$/.test(draft.state.trim()) || postalCode.length !== 8)) {
+      setOrderEditError('Confira todos os dados do endereço e informe um CEP com 8 números.'); return;
+    }
+    if (!draft.paymentMethod) { setOrderEditError('Selecione a forma de pagamento.'); return; }
+    const changes = {
+      customer_name: draft.customerName.trim(), customer_email: email || null, customer_phone: phone,
+      customer_tax_id: taxId, payment_method: draft.paymentMethod, notes: draft.notes.trim() || null,
+      ...(!order.shipping_external_id ? {
+        address: draft.address.trim(), address_number: draft.addressNumber.trim(), district: draft.district.trim(),
+        city: draft.city.trim(), state: draft.state.trim().toUpperCase(), postal_code: postalCode,
+      } : {}), updated_at: new Date().toISOString(),
+    };
+    setOrderSaving(order.id); setOrderEditError(''); setMessage('');
+    const { data, error } = await supabase.from('orders').update(changes).eq('id', order.id).select('*').single();
+    if (error) setOrderEditError(error.message || 'Não foi possível salvar as alterações.');
+    else {
+      setOrders((current) => current.map((item) => item.id === order.id ? { ...item, ...data, order_items: item.order_items } : item));
+      setEditingOrderId(null); setOrderEditDraft(null); setMessage(`Dados do pedido #${order.order_number} atualizados.`);
+    }
     setOrderSaving('');
   }
   async function saveOrderTracking(order) {
@@ -873,7 +922,8 @@ export default function AdminApp() {
                   <div className="admin-order-summary-total"><strong>{money(order.total_amount)}</strong><span>{expanded ? 'Ocultar detalhes' : 'Ver detalhes'}</span><ChevronDown size={20}/></div>
                 </button>
                 {expanded && <div className="admin-order-details" id={detailsId}>
-                  <div className="admin-order-columns"><div><h4>Cliente</h4><p><strong>{order.customer_name}</strong></p><p>{order.customer_email || 'E-mail não informado'}</p><p>{order.customer_phone}</p><p>CPF/CNPJ: {order.customer_tax_id}</p></div><div><h4>Entrega</h4><p>{order.address}, {order.address_number}</p><p>{order.district} · {order.city}/{order.state}</p><p>CEP {order.postal_code}</p><p>{order.fulfillment === 'delivery' ? 'Entrega' : 'Retirada'} · {order.payment_method}</p>{order.shipping_service_name && <p><strong>{order.shipping_company} · {order.shipping_service_name}</strong><br/>Prazo: {order.shipping_delivery_min_days === order.shipping_delivery_max_days ? `${order.shipping_delivery_max_days} dias úteis` : `${order.shipping_delivery_min_days} a ${order.shipping_delivery_max_days} dias úteis`}</p>}</div></div>
+                  <div className="admin-order-edit-toolbar"><div><strong>Dados do pedido</strong><span>Corrija informações do cliente antes de preparar o envio.</span></div>{editingOrderId === order.id ? <button type="button" className="admin-secondary-button" onClick={() => { setEditingOrderId(null); setOrderEditDraft(null); setOrderEditError(''); }}><X size={15}/>Cancelar edição</button> : <button type="button" className="admin-secondary-button" onClick={() => startEditingOrder(order)}><Pencil size={15}/>Editar dados</button>}</div>
+                  {editingOrderId === order.id && orderEditDraft ? <form className="admin-order-edit-form" onSubmit={(event) => saveOrderEdit(event, order)}><div className="admin-order-edit-grid"><label>Nome completo<input value={orderEditDraft.customerName} onChange={(event) => updateOrderEdit('customerName', event.target.value)} required/></label><label>E-mail <span>(opcional)</span><input type="email" value={orderEditDraft.customerEmail} onChange={(event) => updateOrderEdit('customerEmail', event.target.value)}/></label><label>CPF ou CNPJ<input inputMode="numeric" value={orderEditDraft.customerTaxId} onChange={(event) => updateOrderEdit('customerTaxId', event.target.value)} required/></label><label>Telefone<input inputMode="numeric" value={orderEditDraft.customerPhone} onChange={(event) => updateOrderEdit('customerPhone', event.target.value)} required/></label><label className="wide">Endereço<input value={orderEditDraft.address} onChange={(event) => updateOrderEdit('address', event.target.value)} disabled={Boolean(order.shipping_external_id)} required/></label><label>Número / quadra / lote<input value={orderEditDraft.addressNumber} onChange={(event) => updateOrderEdit('addressNumber', event.target.value)} disabled={Boolean(order.shipping_external_id)} required/></label><label>Bairro/setor<input value={orderEditDraft.district} onChange={(event) => updateOrderEdit('district', event.target.value)} disabled={Boolean(order.shipping_external_id)} required/></label><label>Cidade<input value={orderEditDraft.city} onChange={(event) => updateOrderEdit('city', event.target.value)} disabled={Boolean(order.shipping_external_id)} required/></label><label>UF<input value={orderEditDraft.state} onChange={(event) => updateOrderEdit('state', event.target.value.toUpperCase().slice(0, 2))} disabled={Boolean(order.shipping_external_id)} maxLength="2" required/></label><label>CEP<input inputMode="numeric" value={orderEditDraft.postalCode} onChange={(event) => updateOrderEdit('postalCode', event.target.value.replace(/\D/g, '').slice(0, 8))} disabled={Boolean(order.shipping_external_id)} required/></label><label>Pagamento<select value={orderEditDraft.paymentMethod} onChange={(event) => updateOrderEdit('paymentMethod', event.target.value)} required><option value="">Selecione</option><option>Pix</option><option>Cartão</option><option>Dinheiro</option><option>A combinar</option></select></label><label className="wide">Observações <span>(opcional)</span><textarea rows="3" value={orderEditDraft.notes} onChange={(event) => updateOrderEdit('notes', event.target.value)}/></label></div>{order.shipping_external_id && <p className="admin-order-edit-warning">O endereço está bloqueado porque este envio já foi criado no Melhor Envio. Altere os dados diretamente na transportadora ou cancele o envio antes de recriá-lo.</p>}{orderEditError && <p className="admin-order-edit-error" role="alert">{orderEditError}</p>}<div className="admin-order-edit-actions"><button type="submit" className="admin-primary-button" disabled={orderSaving === order.id}><Save size={16}/>{orderSaving === order.id ? 'Salvando...' : 'Salvar alterações'}</button></div></form> : <div className="admin-order-columns"><div><h4>Cliente</h4><p><strong>{order.customer_name}</strong></p><p>{order.customer_email || 'E-mail não informado'}</p><p>{order.customer_phone}</p><p>CPF/CNPJ: {order.customer_tax_id}</p></div><div><h4>Entrega</h4><p>{order.address}, {order.address_number}</p><p>{order.district} · {order.city}/{order.state}</p><p>CEP {order.postal_code}</p><p>{order.fulfillment === 'delivery' ? 'Entrega' : 'Retirada'} · {order.payment_method}</p>{order.shipping_service_name && <p><strong>{order.shipping_company} · {order.shipping_service_name}</strong><br/>Prazo: {order.shipping_delivery_min_days === order.shipping_delivery_max_days ? `${order.shipping_delivery_max_days} dias úteis` : `${order.shipping_delivery_min_days} a ${order.shipping_delivery_max_days} dias úteis`}</p>}</div></div>}
                   <div className="admin-order-items">{(order.order_items ?? []).map((item) => <div key={item.id}><span>{item.quantity}x {item.product_name}<small>{item.color} · {item.print_pattern} · Tam. {item.size}</small></span><strong>{money(item.subtotal)}</strong></div>)}</div>
                   <div className="admin-order-totals"><span>Produtos</span><strong>{money(order.products_amount ?? order.total_amount)}</strong><span>Frete</span><strong>{order.fulfillment === 'delivery' ? money(order.shipping_price ?? 0) : 'Retirada'}</strong><b>Total do pedido</b><b>{money(order.total_amount)}</b></div>
                   {automaticTracking && <section className="admin-shipment-portal"><div><strong>Envio pela transportadora</strong><span>Consulte o andamento e as ocorrências diretamente no acompanhamento oficial do Melhor Envio.</span></div><div>{order.shipping_label_url ? <a className="admin-secondary-button" href={order.shipping_label_url} target="_blank" rel="noreferrer">Abrir etiqueta</a> : order.shipping_external_id ? <button type="button" className="admin-primary-button" disabled={orderSaving === order.id} onClick={() => processShipment(order, 'purchase')}>{orderSaving === order.id ? 'Processando...' : 'Comprar e gerar etiqueta'}</button> : <button type="button" className="admin-primary-button" disabled={orderSaving === order.id || !order.inventory_committed_at || order.status === 'cancelled'} onClick={() => processShipment(order, 'prepare')}>{orderSaving === order.id ? 'Preparando...' : 'Adicionar ao carrinho de envios'}</button>}{order.tracking_url ? <a className="admin-primary-button" href={order.tracking_url} target="_blank" rel="noreferrer">Acompanhar na transportadora</a> : <button type="button" className="admin-secondary-button" disabled>Rastreio ainda indisponível</button>}</div></section>}
