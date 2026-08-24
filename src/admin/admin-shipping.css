@@ -4,8 +4,20 @@
 .admin-shipping-connection strong { font-size: 12px; }
 .admin-shipping-connection span { color: var(--admin-muted); font-size: 10px; }
 .admin-shipping-connection button { flex: 0 0 auto; }
+.admin-local-subtitle { margin: 20px 0 10px; font-size: 13px; }
+.admin-local-list, .admin-local-ranges { display: grid; gap: 8px; max-width: 620px; }
+.admin-local-row { display: grid; grid-template-columns: minmax(0, 1fr) 42px; gap: 8px; }
+.admin-local-range-head, .admin-local-range-row { display: grid; grid-template-columns: 1fr 1fr 42px; gap: 8px; align-items: center; }
+.admin-local-range-head { color: var(--admin-muted); font-size: 11px; font-weight: 700; padding: 0 2px; }
+.admin-local-row input, .admin-local-range-row input { width: 100%; }
+.admin-local-row button, .admin-local-range-row button { display: grid; place-items: center; border: 1px solid #eadde4; border-radius: 8px; background: #fff; color: #b4233a; cursor: pointer; }
+.admin-local-row button:disabled, .admin-local-range-row button:disabled { opacity: .4; cursor: not-allowed; }
+.admin-add-local-button { display: inline-flex; align-items: center; gap: 6px; margin-top: 9px; border: 0; background: transparent; color: var(--admin-accent); font-weight: 700; cursor: pointer; }
+.admin-add-local-button:disabled { opacity: .45; cursor: not-allowed; }
+.admin-local-note { margin: 12px 0 0; color: var(--admin-muted); font-size: 11px; }
 
 @media (max-width: 700px) {
   .admin-shipping-connection { align-items: stretch; flex-direction: column; }
   .admin-shipping-connection button { width: 100%; }
+  .admin-local-range-head, .admin-local-range-row { grid-template-columns: 1fr 1fr 40px; }
 }

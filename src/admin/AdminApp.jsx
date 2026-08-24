@@ -20,6 +20,7 @@ const OPTION_LABELS = { category: 'categoria', color: 'cor', print: 'estampa' };
 const IMAGE_BUCKET = 'product-images';
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 const ORDER_STATUSES = { new: 'Novo', contacted: 'Contatado', confirmed: 'Confirmado', preparing: 'Em preparação', shipped: 'Enviado', completed: 'Concluído', cancelled: 'Cancelado' };
+const TRACKING_STATUSES = { awaiting_shipment: 'Aguardando postagem', posted: 'Postado', in_transit: 'Em trânsito', out_for_delivery: 'Saiu para entrega', delivered: 'Entregue', exception: 'Ocorrência na entrega', returned: 'Devolvido' };
 
 function money(value) {
   return Number(value ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -82,6 +83,15 @@ export default function AdminApp() {
   const [products, setProducts] = useState([]);
   const [orders, setOrders] = useState([]);
   const [orderSaving, setOrderSaving] = useState('');
+  const [editingOrderId, setEditingOrderId] = useState(null);
+  const [orderEditDraft, setOrderEditDraft] = useState(null);
+  const [orderEditError, setOrderEditError] = useState('');
+  const [orderPostalLookup, setOrderPostalLookup] = useState({ loading: false, error: '' });
+  const orderPostalLookupController = useRef(null);
+  const [trackingDrafts, setTrackingDrafts] = useState({});
+  const [shipmentErrors, setShipmentErrors] = useState({});
+  const [orderShippingQuotes, setOrderShippingQuotes] = useState({});
+  const [orderQuoteLoading, setOrderQuoteLoading] = useState('');
   const [orderSearch, setOrderSearch] = useState('');
   const [orderStatusFilter, setOrderStatusFilter] = useState('all');
   const [expandedOrderIds, setExpandedOrderIds] = useState([]);
@@ -104,7 +114,8 @@ export default function AdminApp() {
   const [sessionTimeoutDraft, setSessionTimeoutDraft] = useState('60');
   const [storeNameDraft, setStoreNameDraft] = useState('CHIQUEHELITA');
   const [whatsappDraft, setWhatsappDraft] = useState('');
-  const [shippingDraft, setShippingDraft] = useState({ originPostalCode:'', weightGrams:'500', packagingTareGrams:'100', heightCm:'10', widthCm:'20', lengthCm:'30', maxItems:'5', handlingDays:'1', markup:'0', melhorEnvioEnabled:false, correiosEnabled:false });
+  const [shippingDraft, setShippingDraft] = useState({ originPostalCode:'', weightGrams:'500', packagingTareGrams:'100', heightCm:'10', widthCm:'20', lengthCm:'30', maxItems:'5', handlingDays:'1', markup:'0', melhorEnvioEnabled:false, correiosEnabled:false, localDeliveryEnabled:false, localDeliveryDays:'1', localOriginPostalCode:'', localOriginAddress:'', localOriginNumber:'', localOriginDistrict:'', localOriginCity:'', localOriginState:'', localCities:['Goiânia','Aparecida de Goiânia'], localDistanceRanges:[{maxKm:'5',price:'20'},{maxKm:'10',price:'25'},{maxKm:'15',price:'30'},{maxKm:'20',price:'35'},{maxKm:'25',price:'40'}] });
+  const [senderDraft, setSenderDraft] = useState({ name:'', email:'', phone:'', taxId:'', stateRegister:'', address:'', number:'', complement:'', district:'', city:'', state:'' });
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsMessage, setSettingsMessage] = useState('');
   const [melhorEnvioConnection, setMelhorEnvioConnection] = useState({ loading: true, connected: false, expiresAt: null });
@@ -179,7 +190,7 @@ export default function AdminApp() {
           product_variant_images (id, image_url, sort_order, is_primary)
         )
       `).order('created_at', { ascending: false }),
-      supabase.from('store_settings').select('id, store_name, whatsapp, minimum_wholesale_quantity, primary_color, session_timeout_minutes, origin_postal_code, package_weight_grams, packaging_tare_grams, package_height_cm, package_width_cm, package_length_cm, max_items_per_package, shipping_handling_days, shipping_markup_percent, melhor_envio_enabled, correios_enabled').limit(1).maybeSingle(),
+      supabase.from('store_settings').select('id, store_name, whatsapp, minimum_wholesale_quantity, primary_color, session_timeout_minutes, origin_postal_code, package_weight_grams, packaging_tare_grams, package_height_cm, package_width_cm, package_length_cm, max_items_per_package, shipping_handling_days, shipping_markup_percent, melhor_envio_enabled, correios_enabled, local_delivery_enabled, local_delivery_days, local_delivery_origin_postal_code, local_delivery_origin_address, local_delivery_origin_number, local_delivery_origin_district, local_delivery_origin_city, local_delivery_origin_state, local_delivery_cities, local_delivery_distance_ranges, sender_name, sender_email, sender_phone, sender_tax_id, sender_state_register, sender_address, sender_address_number, sender_address_complement, sender_district, sender_city, sender_state').limit(1).maybeSingle(),
       supabase.from('catalog_options').select('id, option_type, name, active').order('name'),
       supabase.from('orders').select('*, order_items(*)').order('created_at', { ascending: false }),
     ]);
@@ -207,9 +218,26 @@ export default function AdminApp() {
       heightCm:String(settingsResult.data?.package_height_cm ?? 10), widthCm:String(settingsResult.data?.package_width_cm ?? 20), lengthCm:String(settingsResult.data?.package_length_cm ?? 30),
       maxItems:String(settingsResult.data?.max_items_per_package ?? 5), handlingDays:String(settingsResult.data?.shipping_handling_days ?? 1), markup:String(settingsResult.data?.shipping_markup_percent ?? 0),
       melhorEnvioEnabled:Boolean(settingsResult.data?.melhor_envio_enabled), correiosEnabled:Boolean(settingsResult.data?.correios_enabled),
+      localDeliveryEnabled:Boolean(settingsResult.data?.local_delivery_enabled), localDeliveryDays:String(settingsResult.data?.local_delivery_days ?? 1),
+      localOriginPostalCode:settingsResult.data?.local_delivery_origin_postal_code ?? '', localOriginAddress:settingsResult.data?.local_delivery_origin_address ?? '', localOriginNumber:settingsResult.data?.local_delivery_origin_number ?? '', localOriginDistrict:settingsResult.data?.local_delivery_origin_district ?? '', localOriginCity:settingsResult.data?.local_delivery_origin_city ?? '', localOriginState:settingsResult.data?.local_delivery_origin_state ?? '',
+      localCities:Array.isArray(settingsResult.data?.local_delivery_cities) ? settingsResult.data.local_delivery_cities : [], localDistanceRanges:Array.isArray(settingsResult.data?.local_delivery_distance_ranges) ? settingsResult.data.local_delivery_distance_ranges.map((range) => ({maxKm:String(range.maxKm ?? ''),price:String(range.price ?? '')})) : [],
     });
+    setSenderDraft({ name:settingsResult.data?.sender_name ?? '', email:settingsResult.data?.sender_email ?? '', phone:settingsResult.data?.sender_phone ?? '', taxId:settingsResult.data?.sender_tax_id ?? '', stateRegister:settingsResult.data?.sender_state_register ?? '', address:settingsResult.data?.sender_address ?? '', number:settingsResult.data?.sender_address_number ?? '', complement:settingsResult.data?.sender_address_complement ?? '', district:settingsResult.data?.sender_district ?? '', city:settingsResult.data?.sender_city ?? '', state:settingsResult.data?.sender_state ?? '' });
     setCatalogOptions(optionsResult.data ?? []);
-    setOrders(ordersResult.data ?? []);
+    let loadedOrders = ordersResult.data ?? [];
+    const syncTargets = loadedOrders.filter((order) => order.shipping_provider === 'melhor_envio' && order.shipping_external_id && !['completed', 'cancelled'].includes(order.status)).slice(0, 25);
+    if (syncTargets.length) {
+      const synchronized = await Promise.all(syncTargets.map(async (order) => {
+        const { data, error } = await supabase.functions.invoke('manage-shipment', { body: { action: 'sync', orderId: order.id } });
+        return error || !data?.order ? null : { ...data.order, order_items: order.order_items };
+      }));
+      const synchronizedById = new Map(synchronized.filter(Boolean).map((order) => [order.id, order]));
+      loadedOrders = loadedOrders.map((order) => synchronizedById.get(order.id) ?? order);
+    }
+    setOrders(loadedOrders);
+    setTrackingDrafts(Object.fromEntries(loadedOrders.map((order) => [order.id, {
+      status: order.tracking_status ?? 'awaiting_shipment', code: order.tracking_code ?? '', url: order.tracking_url ?? '', externalId: order.shipping_external_id ?? '',
+    }])));
     await loadMelhorEnvioStatus();
     setDashboardLoading(false);
   }
@@ -280,9 +308,182 @@ export default function AdminApp() {
 
   async function updateOrderStatus(orderId, status) {
     setOrderSaving(orderId); setMessage('');
-    const { error } = await supabase.from('orders').update({ status, updated_at: new Date().toISOString() }).eq('id', orderId);
-    if (error) setMessage('Não foi possível atualizar o pedido.');
-    else setOrders((current) => current.map((order) => order.id === orderId ? { ...order, status } : order));
+    const { error } = await supabase.rpc('update_order_status_with_inventory', { p_order_id: orderId, p_status: status });
+    if (error) setMessage(error.message || 'Não foi possível atualizar o pedido.');
+    else { setMessage(status === 'cancelled' ? 'Pedido cancelado. O estoque reservado foi devolvido quando aplicável.' : 'Status e estoque atualizados.'); await loadDashboard(); }
+    setOrderSaving('');
+  }
+  function startEditingOrder(order) {
+    orderPostalLookupController.current?.abort();
+    setOrderPostalLookup({ loading: false, error: '' });
+    setEditingOrderId(order.id);
+    setOrderEditError('');
+    setOrderEditDraft({
+      customerName: order.customer_name ?? '', customerEmail: order.customer_email ?? '',
+      customerPhone: order.customer_phone ?? '', customerTaxId: order.customer_tax_id ?? '',
+      address: order.address ?? '', addressNumber: order.address_number ?? '', district: order.district ?? '',
+      city: order.city ?? '', state: order.state ?? '', postalCode: order.postal_code ?? '',
+      paymentMethod: order.payment_method ?? '', notes: order.notes ?? '',
+    });
+  }
+  function updateOrderEdit(field, value) {
+    setOrderEditDraft((current) => ({ ...current, [field]: value }));
+  }
+  async function updateOrderPostalCode(value) {
+    const postalCode = value.replace(/\D/g, '').slice(0, 8);
+    setOrderEditDraft((current) => current?.postalCode === postalCode ? current : ({
+      ...current, postalCode, address: '', addressNumber: '', district: '', city: '', state: '',
+    }));
+    orderPostalLookupController.current?.abort();
+    if (postalCode.length !== 8) { setOrderPostalLookup({ loading: false, error: '' }); return; }
+    const controller = new AbortController();
+    orderPostalLookupController.current = controller;
+    setOrderPostalLookup({ loading: true, error: '' });
+    try {
+      const response = await fetch(`https://viacep.com.br/ws/${postalCode}/json/`, { signal: controller.signal });
+      if (!response.ok) throw new Error('lookup_failed');
+      const address = await response.json();
+      if (address.erro) { setOrderPostalLookup({ loading: false, error: 'CEP não encontrado.' }); return; }
+      setOrderEditDraft((current) => current ? ({ ...current, address: address.logradouro || '', district: address.bairro || '', city: address.localidade || '', state: address.uf || '' }) : current);
+      setOrderPostalLookup({ loading: false, error: '' });
+    } catch (error) {
+      if (error.name !== 'AbortError') setOrderPostalLookup({ loading: false, error: 'Consulta indisponível. Preencha o endereço manualmente.' });
+    }
+  }
+  async function saveOrderEdit(event, order) {
+    event.preventDefault();
+    const draft = orderEditDraft;
+    if (!draft) return;
+    const taxId = draft.customerTaxId.replace(/\D/g, '');
+    const phone = draft.customerPhone.replace(/\D/g, '');
+    const postalCode = draft.postalCode.replace(/\D/g, '');
+    const email = draft.customerEmail.trim();
+    if (draft.customerName.trim().length < 3 || ![11, 14].includes(taxId.length) || ![10, 11].includes(phone.length) || (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) {
+      setOrderEditError('Confira o nome, e-mail, CPF/CNPJ e telefone.'); return;
+    }
+    if (!order.shipping_external_id && (draft.address.trim().length < 3 || !draft.addressNumber.trim() || draft.district.trim().length < 2 || draft.city.trim().length < 2 || !/^[A-Za-z]{2}$/.test(draft.state.trim()) || postalCode.length !== 8)) {
+      setOrderEditError('Confira todos os dados do endereço e informe um CEP com 8 números.'); return;
+    }
+    if (!draft.paymentMethod) { setOrderEditError('Selecione a forma de pagamento.'); return; }
+    const postalCodeChanged = !order.shipping_external_id && postalCode !== String(order.postal_code ?? '').replace(/\D/g, '');
+    const changes = {
+      customer_name: draft.customerName.trim(), customer_email: email || null, customer_phone: phone,
+      customer_tax_id: taxId, payment_method: draft.paymentMethod, notes: draft.notes.trim() || null,
+      ...(!order.shipping_external_id ? {
+        address: draft.address.trim(), address_number: draft.addressNumber.trim(), district: draft.district.trim(),
+        city: draft.city.trim(), state: draft.state.trim().toUpperCase(), postal_code: postalCode,
+      } : {}), updated_at: new Date().toISOString(),
+      ...(postalCodeChanged ? {
+        shipping_service_id: null, shipping_service_name: null, shipping_company: null,
+        shipping_price: 0, shipping_delivery_min_days: null, shipping_delivery_max_days: null,
+        shipping_quoted_at: null, total_amount: Number(order.products_amount ?? 0),
+      } : {}),
+    };
+    setOrderSaving(order.id); setOrderEditError(''); setMessage('');
+    const { data, error } = await supabase.from('orders').update(changes).eq('id', order.id).select('*').single();
+    if (error) setOrderEditError(error.message || 'Não foi possível salvar as alterações.');
+    else {
+      setOrders((current) => current.map((item) => item.id === order.id ? { ...item, ...data, order_items: item.order_items } : item));
+      setOrderShippingQuotes((current) => ({ ...current, [order.id]: [] }));
+      setEditingOrderId(null); setOrderEditDraft(null); setMessage(postalCodeChanged ? `Dados do pedido #${order.order_number} atualizados. Recalcule o frete para o novo CEP.` : `Dados do pedido #${order.order_number} atualizados.`);
+    }
+    setOrderSaving('');
+  }
+
+  async function calculateOrderShipping(order) {
+    setOrderQuoteLoading(order.id); setShipmentErrors((current) => ({ ...current, [order.id]: '' }));
+    const lines = (order.order_items ?? []).map((item) => ({ productId: item.product_id, variantId: item.variant_id, size: item.size, quantity: item.quantity }));
+    const { data, error } = await supabase.functions.invoke('calculate-shipping', { body: { postalCode: order.postal_code, lines } });
+    let detail = data?.error;
+    if (!detail && error?.context?.json) {
+      try { detail = (await error.context.json())?.error; } catch { detail = ''; }
+    }
+    const options = Array.isArray(data?.options) ? data.options : [];
+    if (error || detail || options.length === 0) {
+      setShipmentErrors((current) => ({ ...current, [order.id]: detail || 'Nenhuma modalidade de entrega está disponível para este CEP.' }));
+      setOrderShippingQuotes((current) => ({ ...current, [order.id]: [] }));
+    } else setOrderShippingQuotes((current) => ({ ...current, [order.id]: options }));
+    setOrderQuoteLoading('');
+  }
+
+  async function selectOrderShipping(order, option) {
+    setOrderSaving(order.id); setShipmentErrors((current) => ({ ...current, [order.id]: '' }));
+    const price = Number(option.price ?? 0);
+    const now = new Date().toISOString();
+    const changes = {
+      shipping_provider: option.provider ?? 'melhor_envio', shipping_service_id: String(option.serviceId),
+      shipping_service_name: option.serviceName, shipping_company: option.company, shipping_price: price,
+      shipping_delivery_min_days: option.deliveryMinDays, shipping_delivery_max_days: option.deliveryMaxDays,
+      shipping_quoted_at: now, total_amount: Number(order.products_amount ?? 0) + price, updated_at: now,
+    };
+    const { data, error } = await supabase.from('orders').update(changes).eq('id', order.id).select('*').single();
+    if (error) setShipmentErrors((current) => ({ ...current, [order.id]: error.message || 'Não foi possível aplicar a nova modalidade de frete.' }));
+    else {
+      setOrders((current) => current.map((item) => item.id === order.id ? { ...item, ...data, order_items: item.order_items } : item));
+      setOrderShippingQuotes((current) => ({ ...current, [order.id]: [] }));
+      setMessage(`Frete do pedido #${order.order_number} recalculado para ${option.company} · ${option.serviceName}.`);
+    }
+    setOrderSaving('');
+  }
+  async function saveOrderTracking(order) {
+    const draft = trackingDrafts[order.id] ?? { status: 'awaiting_shipment', code: '', url: '', externalId: '' };
+    const code = String(draft.code ?? '').trim().slice(0, 100);
+    const url = String(draft.url ?? '').trim().slice(0, 500);
+    const externalId = String(draft.externalId ?? '').trim().slice(0, 100);
+    if (url && !/^https:\/\/[^\s]+$/i.test(url)) { setMessage('O link de rastreio deve começar com https://'); return; }
+    setOrderSaving(order.id); setMessage(''); setShipmentErrors((current) => ({ ...current, [order.id]: '' }));
+    const now = new Date().toISOString();
+    const targetOrderStatus = ['posted', 'in_transit', 'out_for_delivery'].includes(draft.status) ? 'shipped' : draft.status === 'delivered' ? 'completed' : null;
+    let statusData = null;
+    if (targetOrderStatus && order.status !== targetOrderStatus) {
+      const { data, error } = await supabase.rpc('update_order_status_with_inventory', { p_order_id: order.id, p_status: targetOrderStatus });
+      if (error) { setMessage(error.message || 'Não foi possível reservar o estoque para esta entrega.'); setOrderSaving(''); return; }
+      statusData = data;
+    }
+    const changes = {
+      tracking_status: draft.status, tracking_code: code || null, tracking_url: url || null, shipping_external_id: externalId || null, tracking_updated_at: now, updated_at: now,
+      ...(['posted', 'in_transit', 'out_for_delivery', 'delivered'].includes(draft.status) && !order.shipped_at ? { shipped_at: now } : {}),
+      ...(draft.status === 'delivered' && !order.delivered_at ? { delivered_at: now } : {}),
+    };
+    const { data, error } = await supabase.from('orders').update(changes).eq('id', order.id).select('*').single();
+    if (error) setMessage('Não foi possível salvar o acompanhamento da entrega.');
+    else {
+      setOrders((current) => current.map((item) => item.id === order.id ? { ...item, ...(statusData ?? {}), ...data, order_items: item.order_items } : item));
+      setMessage(`Rastreio do pedido #${order.order_number} atualizado.`);
+    }
+    setOrderSaving('');
+  }
+  async function processShipment(order, action) {
+    if (action === 'purchase' && !window.confirm(`Comprar e gerar a etiqueta do pedido #${order.order_number}? No ambiente de produção esta ação descontará o valor do saldo do Melhor Envio.`)) return;
+    setOrderSaving(order.id); setMessage('');
+    const { data, error } = await supabase.functions.invoke('manage-shipment', { body: { action, orderId: order.id } });
+    if (error || data?.error) {
+      let detail = data?.error;
+      if (!detail && error?.context?.json) {
+        try { detail = (await error.context.json())?.error; } catch { detail = ''; }
+      }
+      const feedback = detail || 'Não foi possível processar o envio no Melhor Envio.';
+      setShipmentErrors((current) => ({ ...current, [order.id]: feedback }));
+    } else {
+      setMessage(action === 'prepare' ? `Envio do pedido #${order.order_number} adicionado ao carrinho.` : `Etiqueta do pedido #${order.order_number} comprada e gerada com sucesso.`);
+      setShipmentErrors((current) => ({ ...current, [order.id]: '' }));
+      await loadDashboard();
+      if (action === 'purchase' && data?.labelUrl) window.open(data.labelUrl, '_blank', 'noopener,noreferrer');
+    }
+    setOrderSaving('');
+  }
+
+  async function syncShipmentStatus(order) {
+    setOrderSaving(order.id); setMessage(''); setShipmentErrors((current) => ({ ...current, [order.id]: '' }));
+    const { data, error } = await supabase.functions.invoke('manage-shipment', { body: { action: 'sync', orderId: order.id } });
+    if (error || data?.error || !data?.order) {
+      setShipmentErrors((current) => ({ ...current, [order.id]: data?.error || 'Não foi possível consultar o status no Melhor Envio.' }));
+    } else {
+      const updated = { ...data.order, order_items: order.order_items };
+      setOrders((current) => current.map((item) => item.id === order.id ? updated : item));
+      setTrackingDrafts((current) => ({ ...current, [order.id]: { status: updated.tracking_status ?? 'awaiting_shipment', code: updated.tracking_code ?? '', url: updated.tracking_url ?? '', externalId: updated.shipping_external_id ?? '' } }));
+      setMessage(`Status do pedido #${order.order_number} sincronizado com o Melhor Envio.`);
+    }
     setOrderSaving('');
   }
   function toggleOrderDetails(orderId) {
@@ -435,9 +636,19 @@ export default function AdminApp() {
     const storeName = storeNameDraft.trim();
     const whatsapp = whatsappDraft.replace(/\D/g, '');
     const originPostalCode = shippingDraft.originPostalCode.replace(/\D/g, '');
+    const sender = { sender_name:senderDraft.name.trim(), sender_email:senderDraft.email.trim().toLowerCase(), sender_phone:senderDraft.phone.replace(/\D/g,''), sender_tax_id:senderDraft.taxId.replace(/\D/g,''), sender_state_register:senderDraft.stateRegister.trim() || 'ISENTO', sender_address:senderDraft.address.trim(), sender_address_number:senderDraft.number.trim(), sender_address_complement:senderDraft.complement.trim() || null, sender_district:senderDraft.district.trim(), sender_city:senderDraft.city.trim(), sender_state:senderDraft.state.trim().toUpperCase() };
     const shippingNumbers = {
       package_weight_grams:Number(shippingDraft.weightGrams), packaging_tare_grams:Number(shippingDraft.packagingTareGrams), package_height_cm:Number(shippingDraft.heightCm), package_width_cm:Number(shippingDraft.widthCm),
       package_length_cm:Number(shippingDraft.lengthCm), max_items_per_package:Number(shippingDraft.maxItems), shipping_handling_days:Number(shippingDraft.handlingDays), shipping_markup_percent:Number(shippingDraft.markup),
+    };
+    const localCities = shippingDraft.localCities.map((city) => city.trim()).filter(Boolean);
+    const localRanges = shippingDraft.localDistanceRanges.map((range) => ({ maxKm:Number(range.maxKm), price:Number(range.price) }));
+    const localDelivery = {
+      local_delivery_enabled:shippingDraft.localDeliveryEnabled, local_delivery_days:Number(shippingDraft.localDeliveryDays),
+      local_delivery_origin_postal_code:shippingDraft.localOriginPostalCode.replace(/\D/g,''), local_delivery_origin_address:shippingDraft.localOriginAddress.trim(),
+      local_delivery_origin_number:shippingDraft.localOriginNumber.trim(), local_delivery_origin_district:shippingDraft.localOriginDistrict.trim(),
+      local_delivery_origin_city:shippingDraft.localOriginCity.trim(), local_delivery_origin_state:shippingDraft.localOriginState.trim().toUpperCase(),
+      local_delivery_cities:localCities, local_delivery_distance_ranges:localRanges,
     };
     setSettingsMessage('');
     if (!Number.isInteger(minimum) || minimum < 1) {
@@ -449,16 +660,20 @@ export default function AdminApp() {
     if (storeName.length < 2) { setSettingsMessage('Informe o nome comercial da loja.'); return; }
     if (!/^\d{10,15}$/.test(whatsapp)) { setSettingsMessage('Informe o WhatsApp com código do país e DDD, somente números.'); return; }
     if ((shippingDraft.melhorEnvioEnabled || shippingDraft.correiosEnabled) && !/^\d{8}$/.test(originPostalCode)) { setSettingsMessage('Informe um CEP de origem válido para ativar o frete.'); return; }
+    if (shippingDraft.melhorEnvioEnabled && (!sender.sender_name || !/^\S+@\S+\.\S+$/.test(sender.sender_email) || !/^\d{10,15}$/.test(sender.sender_phone) || !/^(\d{11}|\d{14})$/.test(sender.sender_tax_id) || !sender.sender_address || !sender.sender_address_number || !sender.sender_district || !sender.sender_city || !/^[A-Z]{2}$/.test(sender.sender_state))) { setSettingsMessage('Complete corretamente todos os dados obrigatórios do remetente para usar o Melhor Envio.'); return; }
+    if (localDelivery.local_delivery_enabled && (!/^\d{8}$/.test(localDelivery.local_delivery_origin_postal_code) || !localDelivery.local_delivery_origin_address || !localDelivery.local_delivery_origin_number || !localDelivery.local_delivery_origin_district || !localDelivery.local_delivery_origin_city || !/^[A-Z]{2}$/.test(localDelivery.local_delivery_origin_state) || !Number.isInteger(localDelivery.local_delivery_days) || localDelivery.local_delivery_days < 1)) { setSettingsMessage('Revise o endereço de saída e o prazo da entrega local.'); return; }
+    if (localDelivery.local_delivery_enabled && (!localCities.length || !localRanges.length || localRanges.some((range, index) => !Number.isFinite(range.maxKm) || range.maxKm <= 0 || !Number.isFinite(range.price) || range.price < 0 || (index > 0 && range.maxKm <= localRanges[index - 1].maxKm)))) { setSettingsMessage('Informe cidades e faixas de distância válidas, em ordem crescente.'); return; }
     if (![shippingNumbers.package_weight_grams,shippingNumbers.package_height_cm,shippingNumbers.package_width_cm,shippingNumbers.package_length_cm,shippingNumbers.max_items_per_package].every((value) => Number.isFinite(value) && value > 0) || !Number.isFinite(shippingNumbers.packaging_tare_grams) || shippingNumbers.packaging_tare_grams < 0 || !Number.isInteger(shippingNumbers.shipping_handling_days) || shippingNumbers.shipping_handling_days < 0 || !Number.isFinite(shippingNumbers.shipping_markup_percent) || shippingNumbers.shipping_markup_percent < 0) { setSettingsMessage('Revise peso, embalagem, dimensões, quantidade por pacote, prazo e acréscimo do frete.'); return; }
     if (!settings?.id) { setSettingsMessage('Não foi possível identificar as configurações da loja.'); return; }
     setSettingsSaving(true);
-    const { data, error } = await supabase.from('store_settings').update({ store_name: storeName, whatsapp, minimum_wholesale_quantity: minimum, session_timeout_minutes:sessionTimeoutMinutes, origin_postal_code:originPostalCode, ...shippingNumbers, melhor_envio_enabled:shippingDraft.melhorEnvioEnabled, correios_enabled:shippingDraft.correiosEnabled })
-      .eq('id', settings.id).select('id, store_name, whatsapp, minimum_wholesale_quantity, primary_color, session_timeout_minutes, origin_postal_code, package_weight_grams, packaging_tare_grams, package_height_cm, package_width_cm, package_length_cm, max_items_per_package, shipping_handling_days, shipping_markup_percent, melhor_envio_enabled, correios_enabled').single();
+    const { data, error } = await supabase.from('store_settings').update({ store_name: storeName, whatsapp, minimum_wholesale_quantity: minimum, session_timeout_minutes:sessionTimeoutMinutes, origin_postal_code:originPostalCode, ...shippingNumbers, ...sender, ...localDelivery, melhor_envio_enabled:shippingDraft.melhorEnvioEnabled, correios_enabled:shippingDraft.correiosEnabled })
+      .eq('id', settings.id).select('*').single();
     if (error || !data) {
       setSettingsMessage('Não foi possível salvar a nova regra geral de atacado.'); setSettingsSaving(false); return;
     }
     setSettings(data); setWholesaleMinimumDraft(String(data.minimum_wholesale_quantity)); setSessionTimeoutDraft(String(data.session_timeout_minutes)); setStoreNameDraft(data.store_name); setWhatsappDraft(data.whatsapp);
-    setShippingDraft({ originPostalCode:data.origin_postal_code ?? '', weightGrams:String(data.package_weight_grams), packagingTareGrams:String(data.packaging_tare_grams), heightCm:String(data.package_height_cm), widthCm:String(data.package_width_cm), lengthCm:String(data.package_length_cm), maxItems:String(data.max_items_per_package), handlingDays:String(data.shipping_handling_days), markup:String(data.shipping_markup_percent), melhorEnvioEnabled:data.melhor_envio_enabled, correiosEnabled:data.correios_enabled });
+    setShippingDraft({ originPostalCode:data.origin_postal_code ?? '', weightGrams:String(data.package_weight_grams), packagingTareGrams:String(data.packaging_tare_grams), heightCm:String(data.package_height_cm), widthCm:String(data.package_width_cm), lengthCm:String(data.package_length_cm), maxItems:String(data.max_items_per_package), handlingDays:String(data.shipping_handling_days), markup:String(data.shipping_markup_percent), melhorEnvioEnabled:data.melhor_envio_enabled, correiosEnabled:data.correios_enabled, localDeliveryEnabled:data.local_delivery_enabled, localDeliveryDays:String(data.local_delivery_days), localOriginPostalCode:data.local_delivery_origin_postal_code ?? '', localOriginAddress:data.local_delivery_origin_address ?? '', localOriginNumber:data.local_delivery_origin_number ?? '', localOriginDistrict:data.local_delivery_origin_district ?? '', localOriginCity:data.local_delivery_origin_city ?? '', localOriginState:data.local_delivery_origin_state ?? '', localCities:Array.isArray(data.local_delivery_cities) ? data.local_delivery_cities : [], localDistanceRanges:Array.isArray(data.local_delivery_distance_ranges) ? data.local_delivery_distance_ranges.map((range) => ({maxKm:String(range.maxKm ?? ''),price:String(range.price ?? '')})) : [] });
+    setSenderDraft({ name:data.sender_name ?? '', email:data.sender_email ?? '', phone:data.sender_phone ?? '', taxId:data.sender_tax_id ?? '', stateRegister:data.sender_state_register ?? '', address:data.sender_address ?? '', number:data.sender_address_number ?? '', complement:data.sender_address_complement ?? '', district:data.sender_district ?? '', city:data.sender_city ?? '', state:data.sender_state ?? '' });
     setSettingsMessage('Configurações comerciais e logísticas atualizadas com sucesso.'); setSettingsSaving(false);
   }
 
@@ -784,17 +999,21 @@ export default function AdminApp() {
             {dashboardLoading ? <div className="admin-inline-loading"><div className="admin-spinner"/><span>Atualizando pedidos...</span></div> : orders.length === 0 ? <div className="admin-empty-state">Nenhum pedido recebido até o momento.</div> : filteredOrders.length === 0 ? <div className="admin-empty-state">Nenhum pedido corresponde aos filtros.</div> : <div className="admin-order-list">{filteredOrders.map((order) => {
               const expanded = expandedOrderIds.includes(order.id);
               const detailsId = `order-details-${order.id}`;
+              const automaticTracking = order.shipping_provider === 'melhor_envio';
               return <article className={`admin-order-card ${expanded ? 'expanded' : ''}`} key={order.id}>
                 <button type="button" className="admin-order-summary" onClick={() => toggleOrderDetails(order.id)} aria-expanded={expanded} aria-controls={detailsId}>
                   <div className="admin-order-summary-main"><span className={`admin-order-status status-${order.status}`}>{ORDER_STATUSES[order.status]}</span><div><h3>Pedido #{order.order_number}</h3><small>{new Date(order.created_at).toLocaleString('pt-BR')} · {order.customer_name}</small></div></div>
                   <div className="admin-order-summary-total"><strong>{money(order.total_amount)}</strong><span>{expanded ? 'Ocultar detalhes' : 'Ver detalhes'}</span><ChevronDown size={20}/></div>
                 </button>
                 {expanded && <div className="admin-order-details" id={detailsId}>
-                  <div className="admin-order-columns"><div><h4>Cliente</h4><p><strong>{order.customer_name}</strong></p><p>{order.customer_email || 'E-mail não informado'}</p><p>{order.customer_phone}</p><p>CPF/CNPJ: {order.customer_tax_id}</p></div><div><h4>Entrega</h4><p>{order.address}, {order.address_number}</p><p>{order.district} · {order.city}/{order.state}</p><p>CEP {order.postal_code}</p><p>{order.fulfillment === 'delivery' ? 'Entrega' : 'Retirada'} · {order.payment_method}</p>{order.shipping_service_name && <p><strong>{order.shipping_company} · {order.shipping_service_name}</strong><br/>Prazo: {order.shipping_delivery_min_days === order.shipping_delivery_max_days ? `${order.shipping_delivery_max_days} dias úteis` : `${order.shipping_delivery_min_days} a ${order.shipping_delivery_max_days} dias úteis`}</p>}</div></div>
+                  <div className="admin-order-edit-toolbar"><div><strong>Dados do pedido</strong><span>Corrija informações do cliente antes de preparar o envio.</span></div>{editingOrderId === order.id ? <button type="button" className="admin-secondary-button" onClick={() => { setEditingOrderId(null); setOrderEditDraft(null); setOrderEditError(''); }}><X size={15}/>Cancelar edição</button> : <button type="button" className="admin-secondary-button" onClick={() => startEditingOrder(order)}><Pencil size={15}/>Editar dados</button>}</div>
+                  {editingOrderId === order.id && orderEditDraft ? <form className="admin-order-edit-form" onSubmit={(event) => saveOrderEdit(event, order)}><div className="admin-order-edit-grid"><label>Nome completo<input value={orderEditDraft.customerName} onChange={(event) => updateOrderEdit('customerName', event.target.value)} required/></label><label>E-mail <span>(opcional)</span><input type="email" value={orderEditDraft.customerEmail} onChange={(event) => updateOrderEdit('customerEmail', event.target.value)}/></label><label>CPF ou CNPJ<input inputMode="numeric" value={orderEditDraft.customerTaxId} onChange={(event) => updateOrderEdit('customerTaxId', event.target.value)} required/></label><label>Telefone<input inputMode="numeric" value={orderEditDraft.customerPhone} onChange={(event) => updateOrderEdit('customerPhone', event.target.value)} required/></label><label className="wide">Endereço<input value={orderEditDraft.address} onChange={(event) => updateOrderEdit('address', event.target.value)} disabled={Boolean(order.shipping_external_id)} required/></label><label>Número / quadra / lote<input value={orderEditDraft.addressNumber} onChange={(event) => updateOrderEdit('addressNumber', event.target.value)} disabled={Boolean(order.shipping_external_id)} required/></label><label>Bairro/setor<input value={orderEditDraft.district} onChange={(event) => updateOrderEdit('district', event.target.value)} disabled={Boolean(order.shipping_external_id)} required/></label><label>Cidade<input value={orderEditDraft.city} onChange={(event) => updateOrderEdit('city', event.target.value)} disabled={Boolean(order.shipping_external_id)} required/></label><label>UF<input value={orderEditDraft.state} onChange={(event) => updateOrderEdit('state', event.target.value.toUpperCase().slice(0, 2))} disabled={Boolean(order.shipping_external_id)} maxLength="2" required/></label><label>CEP <span>(preenchimento automático)</span><input inputMode="numeric" value={orderEditDraft.postalCode} onChange={(event) => updateOrderPostalCode(event.target.value)} disabled={Boolean(order.shipping_external_id)} required/>{orderPostalLookup.loading && <small className="admin-postal-status">Consultando endereço...</small>}{orderPostalLookup.error && <small className="admin-postal-error">{orderPostalLookup.error}</small>}</label><label>Pagamento<select value={orderEditDraft.paymentMethod} onChange={(event) => updateOrderEdit('paymentMethod', event.target.value)} required><option value="">Selecione</option><option>Pix</option><option>Cartão</option><option>Dinheiro</option><option>A combinar</option></select></label><label className="wide">Observações <span>(opcional)</span><textarea rows="3" value={orderEditDraft.notes} onChange={(event) => updateOrderEdit('notes', event.target.value)}/></label></div>{order.shipping_external_id && <p className="admin-order-edit-warning">O endereço está bloqueado porque este envio já foi criado no Melhor Envio. Altere os dados diretamente na transportadora ou cancele o envio antes de recriá-lo.</p>}{orderEditError && <p className="admin-order-edit-error" role="alert">{orderEditError}</p>}<div className="admin-order-edit-actions"><button type="submit" className="admin-primary-button" disabled={orderSaving === order.id || orderPostalLookup.loading}><Save size={16}/>{orderSaving === order.id ? 'Salvando...' : 'Salvar alterações'}</button></div></form> : <div className="admin-order-columns"><div><h4>Cliente</h4><p><strong>{order.customer_name}</strong></p><p>{order.customer_email || 'E-mail não informado'}</p><p>{order.customer_phone}</p><p>CPF/CNPJ: {order.customer_tax_id}</p></div><div><h4>Entrega</h4><p>{order.address}, {order.address_number}</p><p>{order.district} · {order.city}/{order.state}</p><p>CEP {order.postal_code}</p><p>{order.fulfillment === 'delivery' ? 'Entrega' : 'Retirada'} · {order.payment_method}</p>{order.shipping_service_name && <p><strong>{order.shipping_company} · {order.shipping_service_name}</strong><br/>Prazo: {order.shipping_delivery_min_days === order.shipping_delivery_max_days ? `${order.shipping_delivery_max_days} dias úteis` : `${order.shipping_delivery_min_days} a ${order.shipping_delivery_max_days} dias úteis`}</p>}</div></div>}
                   <div className="admin-order-items">{(order.order_items ?? []).map((item) => <div key={item.id}><span>{item.quantity}x {item.product_name}<small>{item.color} · {item.print_pattern} · Tam. {item.size}</small></span><strong>{money(item.subtotal)}</strong></div>)}</div>
                   <div className="admin-order-totals"><span>Produtos</span><strong>{money(order.products_amount ?? order.total_amount)}</strong><span>Frete</span><strong>{order.fulfillment === 'delivery' ? money(order.shipping_price ?? 0) : 'Retirada'}</strong><b>Total do pedido</b><b>{money(order.total_amount)}</b></div>
+                  {order.fulfillment === 'delivery' && !order.shipping_external_id && <section className="admin-order-requote"><div><strong>Frete deste pedido</strong><span>{order.shipping_service_id ? `${order.shipping_company} · ${order.shipping_service_name} — ${money(order.shipping_price)}` : 'O CEP foi alterado. Escolha uma nova modalidade de entrega.'}</span></div><button type="button" className="admin-secondary-button" disabled={orderQuoteLoading === order.id || orderSaving === order.id} onClick={() => calculateOrderShipping(order)}><RefreshCw size={15}/>{orderQuoteLoading === order.id ? 'Calculando...' : 'Recalcular frete'}</button>{(orderShippingQuotes[order.id] ?? []).length > 0 && <div className="admin-order-quote-options">{orderShippingQuotes[order.id].map((option) => <button type="button" key={`${option.provider}-${option.serviceId}`} onClick={() => selectOrderShipping(order, option)} disabled={orderSaving === order.id}><span><strong>{option.company} · {option.serviceName}</strong><small>{option.deliveryMinDays === option.deliveryMaxDays ? `${option.deliveryMaxDays} dias úteis` : `${option.deliveryMinDays} a ${option.deliveryMaxDays} dias úteis`}</small></span><b>{money(option.price)}</b></button>)}</div>}</section>}
+                  {automaticTracking && <section className="admin-shipment-portal"><div><strong>Envio pela transportadora</strong><span>Consulte o andamento e as ocorrências diretamente no acompanhamento oficial do Melhor Envio.</span></div><div>{order.shipping_label_url ? <a className="admin-secondary-button" href={order.shipping_label_url} target="_blank" rel="noreferrer">Abrir etiqueta</a> : order.shipping_external_id ? <button type="button" className="admin-primary-button" disabled={orderSaving === order.id} onClick={() => processShipment(order, 'purchase')}>{orderSaving === order.id ? 'Processando...' : 'Comprar e gerar etiqueta'}</button> : <button type="button" className="admin-primary-button" disabled={orderSaving === order.id || !order.inventory_committed_at || order.status === 'cancelled' || !order.shipping_service_id} onClick={() => processShipment(order, 'prepare')}>{orderSaving === order.id ? 'Preparando...' : !order.shipping_service_id ? 'Recalcule o frete primeiro' : 'Adicionar ao carrinho de envios'}</button>}{order.tracking_url ? <a className="admin-primary-button" href={order.tracking_url} target="_blank" rel="noreferrer">Acompanhar na transportadora</a> : <button type="button" className="admin-secondary-button" disabled>Rastreio ainda indisponível</button>}</div></section>}
+                  {shipmentErrors[order.id] && <div className="admin-shipment-error" role="alert"><strong>Não foi possível preparar a etiqueta</strong><span>{shipmentErrors[order.id]}</span><button type="button" onClick={() => setShipmentErrors((current) => ({ ...current, [order.id]: '' }))}>Fechar</button></div>}
                   {order.notes && <p className="admin-order-notes"><strong>Observações:</strong> {order.notes}</p>}
-                  <footer><span>{order.total_quantity} peças</span><label>Status<select value={order.status} disabled={orderSaving === order.id} onChange={(event) => updateOrderStatus(order.id, event.target.value)}>{Object.entries(ORDER_STATUSES).map(([value,label]) => <option value={value} key={value}>{label}</option>)}</select></label></footer>
                 </div>}
               </article>;
             })}</div>}
@@ -842,6 +1061,12 @@ export default function AdminApp() {
                   <label>Máximo de vestidos/pacote<input type="number" min="1" step="1" value={shippingDraft.maxItems} onChange={(e) => setShippingDraft((current) => ({...current,maxItems:e.target.value}))}/></label>
                   <label>Prazo de preparação (dias)<input type="number" min="0" step="1" value={shippingDraft.handlingDays} onChange={(e) => setShippingDraft((current) => ({...current,handlingDays:e.target.value}))}/></label>
                   <label>Acréscimo no frete (%)<input type="number" min="0" step="0.01" value={shippingDraft.markup} onChange={(e) => setShippingDraft((current) => ({...current,markup:e.target.value}))}/></label></div>
+                <section className="admin-sender-settings"><header><div><p className="admin-eyebrow">REMETENTE DA ETIQUETA</p><h3>Dados de postagem da loja</h3><span>Usados somente para gerar etiquetas. Preencha conforme o cadastro fiscal da loja.</span></div></header><div className="admin-settings-grid sender"><label>Nome completo / Razão social<input value={senderDraft.name} onChange={(e) => setSenderDraft((current) => ({...current,name:e.target.value}))}/></label><label>E-mail do remetente<input type="email" value={senderDraft.email} onChange={(e) => setSenderDraft((current) => ({...current,email:e.target.value}))}/></label><label>Telefone<input inputMode="numeric" value={senderDraft.phone} onChange={(e) => setSenderDraft((current) => ({...current,phone:e.target.value.replace(/\D/g,'').slice(0,15)}))} placeholder="DDD + número"/></label><label>CPF ou CNPJ<input inputMode="numeric" value={senderDraft.taxId} onChange={(e) => setSenderDraft((current) => ({...current,taxId:e.target.value.replace(/\D/g,'').slice(0,14)}))}/></label><label>Inscrição estadual<input value={senderDraft.stateRegister} onChange={(e) => setSenderDraft((current) => ({...current,stateRegister:e.target.value}))} placeholder="ISENTO, quando aplicável"/></label><label>Endereço<input value={senderDraft.address} onChange={(e) => setSenderDraft((current) => ({...current,address:e.target.value}))}/></label><label>Número<input value={senderDraft.number} onChange={(e) => setSenderDraft((current) => ({...current,number:e.target.value}))} placeholder="S/N, quando aplicável"/></label><label>Complemento<input value={senderDraft.complement} onChange={(e) => setSenderDraft((current) => ({...current,complement:e.target.value}))}/></label><label>Bairro / Setor<input value={senderDraft.district} onChange={(e) => setSenderDraft((current) => ({...current,district:e.target.value}))}/></label><label>Cidade<input value={senderDraft.city} onChange={(e) => setSenderDraft((current) => ({...current,city:e.target.value}))}/></label><label>Estado (UF)<input value={senderDraft.state} maxLength="2" onChange={(e) => setSenderDraft((current) => ({...current,state:e.target.value.replace(/[^a-z]/gi,'').toUpperCase().slice(0,2)}))} placeholder="GO"/></label></div></section>
+                <section className="admin-sender-settings admin-local-delivery-settings"><header><div><p className="admin-eyebrow">ENTREGA PRÓPRIA</p><h3>Entrega local por distância</h3><span>O preço é calculado pela rota entre o ponto de saída e o endereço do cliente.</span></div><label className="admin-local-delivery-toggle"><input type="checkbox" checked={shippingDraft.localDeliveryEnabled} onChange={(e) => setShippingDraft((current) => ({...current,localDeliveryEnabled:e.target.checked}))}/><strong>{shippingDraft.localDeliveryEnabled ? 'Ativada' : 'Desativada'}</strong></label></header>
+                  <h4 className="admin-local-subtitle">Ponto de saída</h4><div className="admin-settings-grid sender"><label>CEP<input inputMode="numeric" maxLength="8" value={shippingDraft.localOriginPostalCode} onChange={(e) => setShippingDraft((current) => ({...current,localOriginPostalCode:e.target.value.replace(/\D/g,'').slice(0,8)}))} disabled={!shippingDraft.localDeliveryEnabled}/></label><label>Endereço<input value={shippingDraft.localOriginAddress} onChange={(e) => setShippingDraft((current) => ({...current,localOriginAddress:e.target.value}))} disabled={!shippingDraft.localDeliveryEnabled}/></label><label>Quadra / lote / número<input value={shippingDraft.localOriginNumber} onChange={(e) => setShippingDraft((current) => ({...current,localOriginNumber:e.target.value}))} disabled={!shippingDraft.localDeliveryEnabled}/></label><label>Bairro / setor<input value={shippingDraft.localOriginDistrict} onChange={(e) => setShippingDraft((current) => ({...current,localOriginDistrict:e.target.value}))} disabled={!shippingDraft.localDeliveryEnabled}/></label><label>Cidade<input value={shippingDraft.localOriginCity} onChange={(e) => setShippingDraft((current) => ({...current,localOriginCity:e.target.value}))} disabled={!shippingDraft.localDeliveryEnabled}/></label><label>UF<input value={shippingDraft.localOriginState} maxLength="2" onChange={(e) => setShippingDraft((current) => ({...current,localOriginState:e.target.value.replace(/[^a-z]/gi,'').toUpperCase().slice(0,2)}))} disabled={!shippingDraft.localDeliveryEnabled}/></label><label>Prazo estimado (dias úteis)<input type="number" min="1" step="1" value={shippingDraft.localDeliveryDays} onChange={(e) => setShippingDraft((current) => ({...current,localDeliveryDays:e.target.value}))} disabled={!shippingDraft.localDeliveryEnabled}/></label></div>
+                  <h4 className="admin-local-subtitle">Cidades atendidas</h4><div className="admin-local-list">{shippingDraft.localCities.map((city,index) => <div className="admin-local-row" key={`city-${index}`}><input value={city} onChange={(e) => setShippingDraft((current) => ({...current,localCities:current.localCities.map((item,itemIndex) => itemIndex === index ? e.target.value : item)}))} disabled={!shippingDraft.localDeliveryEnabled}/><button type="button" aria-label="Excluir cidade" onClick={() => setShippingDraft((current) => ({...current,localCities:current.localCities.filter((_,itemIndex) => itemIndex !== index)}))} disabled={!shippingDraft.localDeliveryEnabled || shippingDraft.localCities.length === 1}><Trash2 size={16}/></button></div>)}</div><button type="button" className="admin-add-local-button" onClick={() => setShippingDraft((current) => ({...current,localCities:[...current.localCities,'']}))} disabled={!shippingDraft.localDeliveryEnabled}><Plus size={15}/>Adicionar cidade</button>
+                  <h4 className="admin-local-subtitle">Tabela por distância</h4><div className="admin-local-ranges"><div className="admin-local-range-head"><span>Até (km)</span><span>Valor (R$)</span><span></span></div>{shippingDraft.localDistanceRanges.map((range,index) => <div className="admin-local-range-row" key={`range-${index}`}><input type="number" min="0.1" step="0.1" value={range.maxKm} onChange={(e) => setShippingDraft((current) => ({...current,localDistanceRanges:current.localDistanceRanges.map((item,itemIndex) => itemIndex === index ? {...item,maxKm:e.target.value} : item)}))} disabled={!shippingDraft.localDeliveryEnabled}/><input type="number" min="0" step="0.01" value={range.price} onChange={(e) => setShippingDraft((current) => ({...current,localDistanceRanges:current.localDistanceRanges.map((item,itemIndex) => itemIndex === index ? {...item,price:e.target.value} : item)}))} disabled={!shippingDraft.localDeliveryEnabled}/><button type="button" aria-label="Excluir faixa" onClick={() => setShippingDraft((current) => ({...current,localDistanceRanges:current.localDistanceRanges.filter((_,itemIndex) => itemIndex !== index)}))} disabled={!shippingDraft.localDeliveryEnabled || shippingDraft.localDistanceRanges.length === 1}><Trash2 size={16}/></button></div>)}</div><button type="button" className="admin-add-local-button" onClick={() => setShippingDraft((current) => ({...current,localDistanceRanges:[...current.localDistanceRanges,{maxKm:'',price:''}]}))} disabled={!shippingDraft.localDeliveryEnabled}><Plus size={15}/>Adicionar faixa</button><p className="admin-local-note">Endereços acima da última faixa usam somente Melhor Envio/Correios.</p>
+                </section>
                 <div className="admin-shipping-providers"><label><input type="checkbox" checked={shippingDraft.melhorEnvioEnabled} onChange={(e) => setShippingDraft((current) => ({...current,melhorEnvioEnabled:e.target.checked}))}/><div><strong>Melhor Envio</strong><span>Correios, Jadlog e demais serviços habilitados na conta.</span></div><em>{melhorEnvioConnection.loading ? 'Verificando' : melhorEnvioConnection.connected ? 'Conectado' : shippingDraft.melhorEnvioEnabled ? 'Aguardando conexão' : 'Desativado'}</em></label>
                   <label><input type="checkbox" checked={shippingDraft.correiosEnabled} onChange={(e) => setShippingDraft((current) => ({...current,correiosEnabled:e.target.checked}))}/><div><strong>Correios direto</strong><span>Usará contrato e cartão de postagem próprios da loja.</span></div><em>{shippingDraft.correiosEnabled ? 'Preparado' : 'Desativado'}</em></label></div>
                 <div className={`admin-shipping-connection ${melhorEnvioConnection.connected ? 'connected' : ''}`}><div><strong>{melhorEnvioConnection.connected ? 'Conta do Melhor Envio conectada' : 'Conecte sua conta do Melhor Envio'}</strong><span>{melhorEnvioConnection.connected ? `Autorização válida${melhorEnvioConnection.expiresAt ? ` até ${new Date(melhorEnvioConnection.expiresAt).toLocaleDateString('pt-BR')}` : ''}. A renovação será feita automaticamente.` : 'A autorização é necessária para consultar valores e prazos reais no checkout.'}</span></div><button type="button" className={melhorEnvioConnection.connected ? 'admin-secondary-button' : 'admin-primary-button'} onClick={melhorEnvioConnection.connected ? disconnectMelhorEnvio : connectMelhorEnvio} disabled={melhorEnvioConnection.loading}>{melhorEnvioConnection.loading ? 'Verificando...' : melhorEnvioConnection.connected ? 'Desconectar' : 'Conectar ao Melhor Envio'}</button></div>
