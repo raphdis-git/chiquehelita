@@ -115,8 +115,9 @@ Deno.serve(async (req) => {
     if (normalizedLines.some((line: any) => !line.productId || !line.variantId || !Number.isInteger(line.quantity) || line.quantity < 1 || line.quantity > 100)) return reply(req, { error: "Os itens do carrinho são inválidos." }, 400);
 
     const client = createClient(requiredEnv("SUPABASE_URL"), serviceKey(), { auth: { persistSession: false, autoRefreshToken: false } });
-    const { data: settings, error: settingsError } = await client.from("store_settings").select("origin_postal_code,package_weight_grams,packaging_tare_grams,package_height_cm,package_width_cm,package_length_cm,shipping_handling_days,shipping_markup_percent,melhor_envio_enabled").limit(1).single();
-    if (settingsError || !settings?.melhor_envio_enabled || !/^\d{8}$/.test(String(settings.origin_postal_code ?? ""))) throw new Error("O frete automático ainda não está disponível.");
+    const { data: settings, error: settingsError } = await client.from("store_settings").select("origin_postal_code,package_weight_grams,packaging_tare_grams,package_height_cm,package_width_cm,package_length_cm,shipping_handling_days,shipping_markup_percent,melhor_envio_enabled,local_delivery_enabled,local_delivery_price,local_delivery_days,local_delivery_city,local_delivery_state").limit(1).single();
+    if (settingsError || (!settings?.melhor_envio_enabled && !settings?.local_delivery_enabled)) throw new Error("O frete automático ainda não está disponível.");
+    if (settings.melhor_envio_enabled && !/^\d{8}$/.test(String(settings.origin_postal_code ?? ""))) throw new Error("O CEP de origem da loja precisa ser configurado.");
 
     const variantIds = [...new Set(normalizedLines.map((line: any) => line.variantId))];
     const { data: variants, error: variantsError } = await client.from("product_variants").select("id,active,products!inner(id,name,price,promotional_price,active,shipping_weight_grams,shipping_height_cm,shipping_width_cm,shipping_length_cm)").in("id", variantIds);
@@ -140,6 +141,28 @@ Deno.serve(async (req) => {
     });
     if (products.some((product: any) => !product.width || !product.height || !product.length || !product.weight)) throw new Error("Complete o peso e as dimensões dos produtos ou os valores padrão da loja.");
 
+    const localOptions: any[] = [];
+    if (settings.local_delivery_enabled && settings.local_delivery_city && /^[A-Za-z]{2}$/.test(String(settings.local_delivery_state ?? ""))) {
+      try {
+        const addressResponse = await fetch(`https://viacep.com.br/ws/${destination}/json/`);
+        const address = await addressResponse.json().catch(() => ({}));
+        const normalize = (value: unknown) => String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+        if (!address.erro && normalize(address.localidade) === normalize(settings.local_delivery_city) && String(address.uf ?? "").toUpperCase() === String(settings.local_delivery_state).toUpperCase()) {
+          localOptions.push({
+            provider: "local_delivery", serviceId: "local_delivery", serviceName: "Entrega local / motoboy",
+            company: "CHIQUEHELITA", companyPicture: null, price: Number(settings.local_delivery_price || 0),
+            deliveryMinDays: Number(settings.local_delivery_days || 1), deliveryMaxDays: Number(settings.local_delivery_days || 1),
+          });
+        }
+      } catch (error) {
+        console.error("calculate-shipping:local-delivery", error instanceof Error ? error.message : error);
+      }
+    }
+    if (!settings.melhor_envio_enabled) {
+      if (localOptions.length) return reply(req, { options: localOptions });
+      return reply(req, { error: "A entrega local não atende a cidade informada." });
+    }
+
     const token = await accessToken(client);
     const response = await fetch(`${API_URL}/api/v2/me/shipment/calculate`, {
       method: "POST",
@@ -147,11 +170,14 @@ Deno.serve(async (req) => {
       body: JSON.stringify({ from: { postal_code: String(settings.origin_postal_code) }, to: { postal_code: destination }, products, options: { receipt: false, own_hand: false } }),
     });
     const result = await response.json().catch(() => null);
-    if (!response.ok || !Array.isArray(result)) throw new Error("O Melhor Envio não conseguiu calcular o frete agora.");
+    if (!response.ok || !Array.isArray(result)) {
+      if (localOptions.length) return reply(req, { options: localOptions });
+      throw new Error("O Melhor Envio não conseguiu calcular o frete agora.");
+    }
 
     const markup = Math.max(0, Number(settings.shipping_markup_percent || 0));
     const handling = Math.max(0, Number(settings.shipping_handling_days || 0));
-    const options = result.filter((item: any) => !item.error && Number(item.custom_price ?? item.price) >= 0).map((item: any) => {
+    const options = [...localOptions, ...result.filter((item: any) => !item.error && Number(item.custom_price ?? item.price) >= 0).map((item: any) => {
       const basePrice = Number(item.custom_price ?? item.price);
       const range = item.custom_delivery_range ?? item.delivery_range ?? {};
       const deliveryTime = Number(item.custom_delivery_time ?? item.delivery_time ?? 0);
@@ -165,7 +191,7 @@ Deno.serve(async (req) => {
         deliveryMinDays: Math.max(0, Number(range.min ?? deliveryTime)) + handling,
         deliveryMaxDays: Math.max(0, Number(range.max ?? deliveryTime)) + handling,
       };
-    }).sort((a: any, b: any) => a.price - b.price);
+    })].sort((a: any, b: any) => a.price - b.price);
     if (!options.length) {
       const providerMessages = [...new Set(result
         .map((item: any) => String(item?.error ?? "").trim())

@@ -46,7 +46,7 @@ Deno.serve(async (req) => {
     const productsAmount = items.reduce((sum: number, item: any) => sum + item.subtotal, 0);
     let selectedShipping: any = null;
     if (customer.fulfillment === "delivery") {
-      if (shipping?.provider !== "melhor_envio" || !text(shipping.serviceId, 40)) return reply({ error: "Calcule e selecione uma opção de frete." }, 400);
+      if (!["melhor_envio","local_delivery"].includes(shipping?.provider) || !text(shipping.serviceId, 40)) return reply({ error: "Calcule e selecione uma opção de frete." }, 400);
       const quoteResponse = await fetch(`${supabaseUrl}/functions/v1/calculate-shipping`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -54,7 +54,7 @@ Deno.serve(async (req) => {
       });
       const quote = await quoteResponse.json().catch(() => ({}));
       if (!quoteResponse.ok) return reply({ error: quote.error || "Não foi possível confirmar o frete." }, 400);
-      selectedShipping = quote.options?.find((option: any) => String(option.serviceId) === String(shipping.serviceId));
+      selectedShipping = quote.options?.find((option: any) => option.provider === shipping.provider && String(option.serviceId) === String(shipping.serviceId));
       if (!selectedShipping) return reply({ error: "A opção de frete escolhida não está mais disponível. Calcule novamente." }, 400);
     }
     const shippingPrice = Number(selectedShipping?.price || 0);
