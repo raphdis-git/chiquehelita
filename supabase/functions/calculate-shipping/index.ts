@@ -142,6 +142,7 @@ Deno.serve(async (req) => {
     if (products.some((product: any) => !product.width || !product.height || !product.length || !product.weight)) throw new Error("Complete o peso e as dimensões dos produtos ou os valores padrão da loja.");
 
     const localOptions: any[] = [];
+    let localDeliveryRangeError = "";
     if (settings.local_delivery_enabled && Array.isArray(settings.local_delivery_cities) && Array.isArray(settings.local_delivery_distance_ranges)) {
       try {
         const addressResponse = await fetch(`https://viacep.com.br/ws/${destination}/json/`);
@@ -170,16 +171,22 @@ Deno.serve(async (req) => {
             .filter((range: any) => Number.isFinite(range.maxKm) && range.maxKm > 0 && Number.isFinite(range.price) && range.price >= 0)
             .sort((a: any, b: any) => a.maxKm - b.maxKm);
           const selectedRange = ranges.find((range: any) => distanceKm <= range.maxKm + 0.0001);
-          if (selectedRange) localOptions.push({
-            provider: "local_delivery", serviceId: "local_delivery", serviceName: `Motoboy · ${distanceKm.toFixed(1).replace(".", ",")} km`,
-            company: "Entrega local", companyPicture: null, price: selectedRange.price, distanceKm:Number(distanceKm.toFixed(1)),
-            deliveryMinDays: Number(settings.local_delivery_days || 1), deliveryMaxDays: Number(settings.local_delivery_days || 1),
-          });
+          if (selectedRange) {
+            localOptions.push({
+              provider: "local_delivery", serviceId: "local_delivery", serviceName: `Motoboy · ${distanceKm.toFixed(1).replace(".", ",")} km`,
+              company: "Entrega local", companyPicture: null, price: selectedRange.price, distanceKm:Number(distanceKm.toFixed(1)),
+              deliveryMinDays: Number(settings.local_delivery_days || 1), deliveryMaxDays: Number(settings.local_delivery_days || 1),
+            });
+          } else if (ranges.length) {
+            const maximumKm = ranges[ranges.length - 1].maxKm;
+            localDeliveryRangeError = `A entrega local está a ${distanceKm.toFixed(1).replace(".", ",")} km e ultrapassa a última faixa cadastrada de ${maximumKm.toLocaleString("pt-BR")} km. Adicione uma nova faixa em Configurações.`;
+          }
         }
       } catch (error) {
         console.error("calculate-shipping:local-delivery", error instanceof Error ? error.message : error);
       }
     }
+    if (localDeliveryRangeError) return reply(req, { error: localDeliveryRangeError, reason: "local_delivery_out_of_range" }, 422);
     if (!settings.melhor_envio_enabled) {
       if (localOptions.length) return reply(req, { options: localOptions });
       return reply(req, { error: "A entrega local não atende a cidade informada." });
