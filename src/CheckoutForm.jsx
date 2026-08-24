@@ -83,7 +83,11 @@ export default function CheckoutForm({ whatsapp, lines, summary, money, onComple
   async function calculateShipping() {
     if (!/^\d{8}$/.test(customer.postalCode)) { setShippingError('Informe os 8 números do CEP antes de calcular.'); return; }
     setShippingLoading(true); setShippingError('');
-    const { data, error } = await supabase.functions.invoke('calculate-shipping', { body: { postalCode: customer.postalCode, lines: payloadLines } });
+    const destinationAddress = {
+      address: customer.address, number: customer.addressNumber, district: customer.district,
+      city: customer.city, state: customer.state,
+    };
+    const { data, error } = await supabase.functions.invoke('calculate-shipping', { body: { postalCode: customer.postalCode, destinationAddress, lines: payloadLines } });
     let errorMessage = data?.error;
     if (!errorMessage && error?.context instanceof Response) {
       const responseBody = await error.context.clone().json().catch(() => null);
@@ -136,4 +140,3 @@ export default function CheckoutForm({ whatsapp, lines, summary, money, onComple
     <footer className="checkout-navigation"><button className="button secondary" type="button" onClick={step === 0 ? onCancel : () => setStep((current) => current - 1)}><ArrowLeft size={17}/>{step === 0 ? 'Voltar ao carrinho' : 'Voltar'}</button>{step < 2 ? <button className="button" type="button" onClick={nextStep}>Continuar <ArrowRight size={17}/></button> : <button className="button checkout-confirm-button" type="submit" disabled={submitting}><MessageCircle size={22}/><span><strong>{submitting ? 'Confirmando pedido...' : 'Confirmar pedido'}</strong><small>{submitting ? 'Aguarde um instante' : 'Enviar pelo WhatsApp'}</small></span></button>}</footer>
   </form>;
 }
-
