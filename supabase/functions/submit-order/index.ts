@@ -24,7 +24,7 @@ Deno.serve(async (req) => {
     const taxId = digits(customer.taxId), phone = digits(customer.phone), postalCode = digits(customer.postalCode);
     if (![11,14].includes(taxId.length) || !/^\d{10,11}$/.test(phone) || !/^\d{8}$/.test(postalCode)) return reply({ error: "Dados cadastrais inválidos." }, 400);
     const email = text(customer.email);
-    if ((email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) || text(customer.name).split(/\s+/).length < 2 || text(customer.address).length < 3 || !text(customer.addressNumber) || text(customer.district).length < 2 || text(customer.city).length < 2 || !/^[A-Za-z]{2}$/.test(text(customer.state)) || !["delivery","pickup"].includes(customer.fulfillment) || !text(customer.payment) || text(customer.notes,1000).length < 2) return reply({ error: "Preencha todos os campos obrigatórios corretamente." }, 400);
+    if ((email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) || text(customer.name).split(/\s+/).length < 2 || text(customer.address).length < 3 || !text(customer.addressNumber) || text(customer.district).length < 2 || text(customer.city).length < 2 || !/^[A-Za-z]{2}$/.test(text(customer.state)) || !["delivery","pickup"].includes(customer.fulfillment) || !text(customer.payment)) return reply({ error: "Preencha todos os campos obrigatórios corretamente." }, 400);
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const client = createClient(supabaseUrl, serviceKey(), { auth: { persistSession: false, autoRefreshToken: false } });
     const ids = lines.map((line: any) => line.variantId);

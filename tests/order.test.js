@@ -21,7 +21,7 @@ test('formata CPF, CNPJ e telefone durante a digitação', () => {
 
 test('valida os dados obrigatórios do cliente', () => {
   assert.deepEqual(validateCustomer(customer), {});
-  assert.deepEqual(Object.keys(validateCustomer({})).sort(), ['address', 'addressNumber', 'city', 'district', 'fulfillment', 'name', 'notes', 'payment', 'phone', 'postalCode', 'state', 'taxId']);
+  assert.deepEqual(Object.keys(validateCustomer({})).sort(), ['address', 'addressNumber', 'city', 'district', 'fulfillment', 'name', 'payment', 'phone', 'postalCode', 'state', 'taxId']);
   assert.deepEqual(validateCustomer({ ...customer, email: '' }), {});
   assert.equal(validateCustomer({ ...customer, email: 'email-invalido' }).email, 'Informe um e-mail válido ou deixe o campo vazio.');
 });
