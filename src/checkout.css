@@ -24,6 +24,9 @@
 .checkout-navigation{display:flex;justify-content:space-between;gap:12px;padding-top:22px;border-top:1px solid var(--line)}
 .checkout-navigation .button{display:flex;align-items:center;justify-content:center;gap:7px;min-width:150px}
 .checkout-navigation .secondary{border:1px solid var(--line);background:#fff;color:var(--ink)}
+.checkout-navigation .checkout-confirm-button{flex:1;min-height:60px;border-radius:12px;background:linear-gradient(135deg,var(--primary),#d90071);box-shadow:0 10px 24px #f6007f3d;font-size:15px;transition:transform .18s ease,box-shadow .18s ease}
+.checkout-navigation .checkout-confirm-button:hover{transform:translateY(-2px);box-shadow:0 14px 30px #f6007f52}
+.checkout-confirm-button>span{display:grid;gap:2px;text-align:left}.checkout-confirm-button strong{font-size:16px}.checkout-confirm-button small{color:#fff;font-size:11px;font-weight:600;opacity:.9}
 .checkout-review-items{display:grid;gap:0;border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .checkout-review-items article{display:flex;padding:13px 15px;border-bottom:1px solid var(--line)}.checkout-review-items article:last-child{border:0}
 .checkout-review-items span{display:grid;gap:4px;font-weight:700}.checkout-review-items small{color:var(--muted);font-weight:500}
