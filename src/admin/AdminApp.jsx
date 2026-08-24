@@ -88,6 +88,8 @@ export default function AdminApp() {
   const [orderEditError, setOrderEditError] = useState('');
   const [trackingDrafts, setTrackingDrafts] = useState({});
   const [shipmentErrors, setShipmentErrors] = useState({});
+  const [orderShippingQuotes, setOrderShippingQuotes] = useState({});
+  const [orderQuoteLoading, setOrderQuoteLoading] = useState('');
   const [orderSearch, setOrderSearch] = useState('');
   const [orderStatusFilter, setOrderStatusFilter] = useState('all');
   const [expandedOrderIds, setExpandedOrderIds] = useState([]);
@@ -335,6 +337,7 @@ export default function AdminApp() {
       setOrderEditError('Confira todos os dados do endereço e informe um CEP com 8 números.'); return;
     }
     if (!draft.paymentMethod) { setOrderEditError('Selecione a forma de pagamento.'); return; }
+    const postalCodeChanged = !order.shipping_external_id && postalCode !== String(order.postal_code ?? '').replace(/\D/g, '');
     const changes = {
       customer_name: draft.customerName.trim(), customer_email: email || null, customer_phone: phone,
       customer_tax_id: taxId, payment_method: draft.paymentMethod, notes: draft.notes.trim() || null,
@@ -342,13 +345,55 @@ export default function AdminApp() {
         address: draft.address.trim(), address_number: draft.addressNumber.trim(), district: draft.district.trim(),
         city: draft.city.trim(), state: draft.state.trim().toUpperCase(), postal_code: postalCode,
       } : {}), updated_at: new Date().toISOString(),
+      ...(postalCodeChanged ? {
+        shipping_service_id: null, shipping_service_name: null, shipping_company: null,
+        shipping_price: 0, shipping_delivery_min_days: null, shipping_delivery_max_days: null,
+        shipping_quoted_at: null, total_amount: Number(order.products_amount ?? 0),
+      } : {}),
     };
     setOrderSaving(order.id); setOrderEditError(''); setMessage('');
     const { data, error } = await supabase.from('orders').update(changes).eq('id', order.id).select('*').single();
     if (error) setOrderEditError(error.message || 'Não foi possível salvar as alterações.');
     else {
       setOrders((current) => current.map((item) => item.id === order.id ? { ...item, ...data, order_items: item.order_items } : item));
-      setEditingOrderId(null); setOrderEditDraft(null); setMessage(`Dados do pedido #${order.order_number} atualizados.`);
+      setOrderShippingQuotes((current) => ({ ...current, [order.id]: [] }));
+      setEditingOrderId(null); setOrderEditDraft(null); setMessage(postalCodeChanged ? `Dados do pedido #${order.order_number} atualizados. Recalcule o frete para o novo CEP.` : `Dados do pedido #${order.order_number} atualizados.`);
+    }
+    setOrderSaving('');
+  }
+
+  async function calculateOrderShipping(order) {
+    setOrderQuoteLoading(order.id); setShipmentErrors((current) => ({ ...current, [order.id]: '' }));
+    const lines = (order.order_items ?? []).map((item) => ({ productId: item.product_id, variantId: item.variant_id, size: item.size, quantity: item.quantity }));
+    const { data, error } = await supabase.functions.invoke('calculate-shipping', { body: { postalCode: order.postal_code, lines } });
+    let detail = data?.error;
+    if (!detail && error?.context?.json) {
+      try { detail = (await error.context.json())?.error; } catch { detail = ''; }
+    }
+    const options = Array.isArray(data?.options) ? data.options : [];
+    if (error || detail || options.length === 0) {
+      setShipmentErrors((current) => ({ ...current, [order.id]: detail || 'Nenhuma modalidade de entrega está disponível para este CEP.' }));
+      setOrderShippingQuotes((current) => ({ ...current, [order.id]: [] }));
+    } else setOrderShippingQuotes((current) => ({ ...current, [order.id]: options }));
+    setOrderQuoteLoading('');
+  }
+
+  async function selectOrderShipping(order, option) {
+    setOrderSaving(order.id); setShipmentErrors((current) => ({ ...current, [order.id]: '' }));
+    const price = Number(option.price ?? 0);
+    const now = new Date().toISOString();
+    const changes = {
+      shipping_provider: option.provider ?? 'melhor_envio', shipping_service_id: String(option.serviceId),
+      shipping_service_name: option.serviceName, shipping_company: option.company, shipping_price: price,
+      shipping_delivery_min_days: option.deliveryMinDays, shipping_delivery_max_days: option.deliveryMaxDays,
+      shipping_quoted_at: now, total_amount: Number(order.products_amount ?? 0) + price, updated_at: now,
+    };
+    const { data, error } = await supabase.from('orders').update(changes).eq('id', order.id).select('*').single();
+    if (error) setShipmentErrors((current) => ({ ...current, [order.id]: error.message || 'Não foi possível aplicar a nova modalidade de frete.' }));
+    else {
+      setOrders((current) => current.map((item) => item.id === order.id ? { ...item, ...data, order_items: item.order_items } : item));
+      setOrderShippingQuotes((current) => ({ ...current, [order.id]: [] }));
+      setMessage(`Frete do pedido #${order.order_number} recalculado para ${option.company} · ${option.serviceName}.`);
     }
     setOrderSaving('');
   }
@@ -926,7 +971,8 @@ export default function AdminApp() {
                   {editingOrderId === order.id && orderEditDraft ? <form className="admin-order-edit-form" onSubmit={(event) => saveOrderEdit(event, order)}><div className="admin-order-edit-grid"><label>Nome completo<input value={orderEditDraft.customerName} onChange={(event) => updateOrderEdit('customerName', event.target.value)} required/></label><label>E-mail <span>(opcional)</span><input type="email" value={orderEditDraft.customerEmail} onChange={(event) => updateOrderEdit('customerEmail', event.target.value)}/></label><label>CPF ou CNPJ<input inputMode="numeric" value={orderEditDraft.customerTaxId} onChange={(event) => updateOrderEdit('customerTaxId', event.target.value)} required/></label><label>Telefone<input inputMode="numeric" value={orderEditDraft.customerPhone} onChange={(event) => updateOrderEdit('customerPhone', event.target.value)} required/></label><label className="wide">Endereço<input value={orderEditDraft.address} onChange={(event) => updateOrderEdit('address', event.target.value)} disabled={Boolean(order.shipping_external_id)} required/></label><label>Número / quadra / lote<input value={orderEditDraft.addressNumber} onChange={(event) => updateOrderEdit('addressNumber', event.target.value)} disabled={Boolean(order.shipping_external_id)} required/></label><label>Bairro/setor<input value={orderEditDraft.district} onChange={(event) => updateOrderEdit('district', event.target.value)} disabled={Boolean(order.shipping_external_id)} required/></label><label>Cidade<input value={orderEditDraft.city} onChange={(event) => updateOrderEdit('city', event.target.value)} disabled={Boolean(order.shipping_external_id)} required/></label><label>UF<input value={orderEditDraft.state} onChange={(event) => updateOrderEdit('state', event.target.value.toUpperCase().slice(0, 2))} disabled={Boolean(order.shipping_external_id)} maxLength="2" required/></label><label>CEP<input inputMode="numeric" value={orderEditDraft.postalCode} onChange={(event) => updateOrderEdit('postalCode', event.target.value.replace(/\D/g, '').slice(0, 8))} disabled={Boolean(order.shipping_external_id)} required/></label><label>Pagamento<select value={orderEditDraft.paymentMethod} onChange={(event) => updateOrderEdit('paymentMethod', event.target.value)} required><option value="">Selecione</option><option>Pix</option><option>Cartão</option><option>Dinheiro</option><option>A combinar</option></select></label><label className="wide">Observações <span>(opcional)</span><textarea rows="3" value={orderEditDraft.notes} onChange={(event) => updateOrderEdit('notes', event.target.value)}/></label></div>{order.shipping_external_id && <p className="admin-order-edit-warning">O endereço está bloqueado porque este envio já foi criado no Melhor Envio. Altere os dados diretamente na transportadora ou cancele o envio antes de recriá-lo.</p>}{orderEditError && <p className="admin-order-edit-error" role="alert">{orderEditError}</p>}<div className="admin-order-edit-actions"><button type="submit" className="admin-primary-button" disabled={orderSaving === order.id}><Save size={16}/>{orderSaving === order.id ? 'Salvando...' : 'Salvar alterações'}</button></div></form> : <div className="admin-order-columns"><div><h4>Cliente</h4><p><strong>{order.customer_name}</strong></p><p>{order.customer_email || 'E-mail não informado'}</p><p>{order.customer_phone}</p><p>CPF/CNPJ: {order.customer_tax_id}</p></div><div><h4>Entrega</h4><p>{order.address}, {order.address_number}</p><p>{order.district} · {order.city}/{order.state}</p><p>CEP {order.postal_code}</p><p>{order.fulfillment === 'delivery' ? 'Entrega' : 'Retirada'} · {order.payment_method}</p>{order.shipping_service_name && <p><strong>{order.shipping_company} · {order.shipping_service_name}</strong><br/>Prazo: {order.shipping_delivery_min_days === order.shipping_delivery_max_days ? `${order.shipping_delivery_max_days} dias úteis` : `${order.shipping_delivery_min_days} a ${order.shipping_delivery_max_days} dias úteis`}</p>}</div></div>}
                   <div className="admin-order-items">{(order.order_items ?? []).map((item) => <div key={item.id}><span>{item.quantity}x {item.product_name}<small>{item.color} · {item.print_pattern} · Tam. {item.size}</small></span><strong>{money(item.subtotal)}</strong></div>)}</div>
                   <div className="admin-order-totals"><span>Produtos</span><strong>{money(order.products_amount ?? order.total_amount)}</strong><span>Frete</span><strong>{order.fulfillment === 'delivery' ? money(order.shipping_price ?? 0) : 'Retirada'}</strong><b>Total do pedido</b><b>{money(order.total_amount)}</b></div>
-                  {automaticTracking && <section className="admin-shipment-portal"><div><strong>Envio pela transportadora</strong><span>Consulte o andamento e as ocorrências diretamente no acompanhamento oficial do Melhor Envio.</span></div><div>{order.shipping_label_url ? <a className="admin-secondary-button" href={order.shipping_label_url} target="_blank" rel="noreferrer">Abrir etiqueta</a> : order.shipping_external_id ? <button type="button" className="admin-primary-button" disabled={orderSaving === order.id} onClick={() => processShipment(order, 'purchase')}>{orderSaving === order.id ? 'Processando...' : 'Comprar e gerar etiqueta'}</button> : <button type="button" className="admin-primary-button" disabled={orderSaving === order.id || !order.inventory_committed_at || order.status === 'cancelled'} onClick={() => processShipment(order, 'prepare')}>{orderSaving === order.id ? 'Preparando...' : 'Adicionar ao carrinho de envios'}</button>}{order.tracking_url ? <a className="admin-primary-button" href={order.tracking_url} target="_blank" rel="noreferrer">Acompanhar na transportadora</a> : <button type="button" className="admin-secondary-button" disabled>Rastreio ainda indisponível</button>}</div></section>}
+                  {automaticTracking && !order.shipping_external_id && <section className="admin-order-requote"><div><strong>Frete deste pedido</strong><span>{order.shipping_service_id ? `${order.shipping_company} · ${order.shipping_service_name} — ${money(order.shipping_price)}` : 'O CEP foi alterado. Escolha uma nova modalidade antes de preparar a etiqueta.'}</span></div><button type="button" className="admin-secondary-button" disabled={orderQuoteLoading === order.id || orderSaving === order.id} onClick={() => calculateOrderShipping(order)}><RefreshCw size={15}/>{orderQuoteLoading === order.id ? 'Calculando...' : 'Recalcular frete'}</button>{(orderShippingQuotes[order.id] ?? []).length > 0 && <div className="admin-order-quote-options">{orderShippingQuotes[order.id].map((option) => <button type="button" key={`${option.provider}-${option.serviceId}`} onClick={() => selectOrderShipping(order, option)} disabled={orderSaving === order.id}><span><strong>{option.company} · {option.serviceName}</strong><small>{option.deliveryMinDays === option.deliveryMaxDays ? `${option.deliveryMaxDays} dias úteis` : `${option.deliveryMinDays} a ${option.deliveryMaxDays} dias úteis`}</small></span><b>{money(option.price)}</b></button>)}</div>}</section>}
+                  {automaticTracking && <section className="admin-shipment-portal"><div><strong>Envio pela transportadora</strong><span>Consulte o andamento e as ocorrências diretamente no acompanhamento oficial do Melhor Envio.</span></div><div>{order.shipping_label_url ? <a className="admin-secondary-button" href={order.shipping_label_url} target="_blank" rel="noreferrer">Abrir etiqueta</a> : order.shipping_external_id ? <button type="button" className="admin-primary-button" disabled={orderSaving === order.id} onClick={() => processShipment(order, 'purchase')}>{orderSaving === order.id ? 'Processando...' : 'Comprar e gerar etiqueta'}</button> : <button type="button" className="admin-primary-button" disabled={orderSaving === order.id || !order.inventory_committed_at || order.status === 'cancelled' || !order.shipping_service_id} onClick={() => processShipment(order, 'prepare')}>{orderSaving === order.id ? 'Preparando...' : !order.shipping_service_id ? 'Recalcule o frete primeiro' : 'Adicionar ao carrinho de envios'}</button>}{order.tracking_url ? <a className="admin-primary-button" href={order.tracking_url} target="_blank" rel="noreferrer">Acompanhar na transportadora</a> : <button type="button" className="admin-secondary-button" disabled>Rastreio ainda indisponível</button>}</div></section>}
                   {shipmentErrors[order.id] && <div className="admin-shipment-error" role="alert"><strong>Não foi possível preparar a etiqueta</strong><span>{shipmentErrors[order.id]}</span><button type="button" onClick={() => setShipmentErrors((current) => ({ ...current, [order.id]: '' }))}>Fechar</button></div>}
                   {order.notes && <p className="admin-order-notes"><strong>Observações:</strong> {order.notes}</p>}
                 </div>}
