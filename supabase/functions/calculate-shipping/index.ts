@@ -156,30 +156,35 @@ Deno.serve(async (req) => {
         if (!address.erro && allowedCity && destinationState === configuredState) {
           localDeliveryEligible = true;
           const field = (name: string) => String(destinationAddress?.[name] ?? "").trim().slice(0, 120);
-          const origin = [settings.local_delivery_origin_address, settings.local_delivery_origin_number, settings.local_delivery_origin_district, settings.local_delivery_origin_city, settings.local_delivery_origin_state, settings.local_delivery_origin_postal_code].filter(Boolean).join(", ");
-          const destinationFull = [field("address") || address.logradouro, field("number"), field("district") || address.bairro, address.localidade, address.uf, destination].filter(Boolean).join(", ");
+          const origin = [settings.local_delivery_origin_address, settings.local_delivery_origin_district, settings.local_delivery_origin_city, settings.local_delivery_origin_state, "Brasil"].filter(Boolean).join(", ");
+          const destinationFull = [field("address") || address.logradouro, field("district") || address.bairro, address.localidade, address.uf, "Brasil"].filter(Boolean).join(", ");
           const routesKey = Deno.env.get("OPENROUTESERVICE_API_KEY")?.trim();
           if (!routesKey) throw new Error("A chave do OpenRouteService ainda não está configurada.");
-          const geocode = async (text: string) => {
+          const geocode = async (text: string, label: string) => {
             const url = new URL("https://api.openrouteservice.org/geocode/search");
             url.searchParams.set("text", text);
             url.searchParams.set("boundary.country", "BR");
             url.searchParams.set("size", "1");
             const response = await fetch(url, { headers:{ "Authorization":routesKey, "Accept":"application/json" } });
             const result = await response.json().catch(() => ({}));
+            if (response.status === 401 || response.status === 403) throw new Error("A chave do OpenRouteService não foi aceita.");
             const coordinates = result?.features?.[0]?.geometry?.coordinates;
-            if (!response.ok || !Array.isArray(coordinates) || coordinates.length !== 2 || coordinates.some((value: unknown) => !Number.isFinite(Number(value)))) throw new Error("Não foi possível localizar um dos endereços da entrega local.");
+            if (!response.ok || !Array.isArray(coordinates) || coordinates.length !== 2 || coordinates.some((value: unknown) => !Number.isFinite(Number(value)))) throw new Error(`Não foi possível localizar o ${label}.`);
             return coordinates.map(Number);
           };
-          const [originCoordinates, destinationCoordinates] = await Promise.all([geocode(origin), geocode(destinationFull)]);
+          const [originCoordinates, destinationCoordinates] = await Promise.all([geocode(origin, "endereço de saída"), geocode(destinationFull, "endereço de entrega")]);
           const routeResponse = await fetch("https://api.openrouteservice.org/v2/directions/driving-car", {
             method: "POST",
             headers: { "Authorization":routesKey, "Content-Type":"application/json", "Accept":"application/json" },
             body: JSON.stringify({ coordinates:[originCoordinates,destinationCoordinates], instructions:false, geometry:false }),
           });
           const route = await routeResponse.json().catch(() => ({}));
-          const distanceMeters = Number(route?.routes?.[0]?.summary?.distance);
-          if (!routeResponse.ok || !Number.isFinite(distanceMeters) || distanceMeters <= 0) throw new Error("Não foi possível calcular a rota da entrega local.");
+          if (routeResponse.status === 401 || routeResponse.status === 403) throw new Error("A chave do OpenRouteService não foi aceita.");
+          const distanceMeters = Number(route?.routes?.[0]?.summary?.distance ?? route?.features?.[0]?.properties?.summary?.distance);
+          if (!routeResponse.ok || !Number.isFinite(distanceMeters) || distanceMeters <= 0) {
+            const providerDetail = String(route?.error?.message ?? "").trim();
+            throw new Error(providerDetail ? `Não foi possível calcular a rota: ${providerDetail}` : "Não foi possível calcular a rota da entrega local.");
+          }
           const distanceKm = distanceMeters / 1000;
           const ranges = settings.local_delivery_distance_ranges
             .map((range: any) => ({ maxKm:Number(range?.maxKm), price:Number(range?.price) }))
@@ -198,8 +203,9 @@ Deno.serve(async (req) => {
           }
         }
       } catch (error) {
-        console.error("calculate-shipping:local-delivery", error instanceof Error ? error.message : error);
-        if (localDeliveryEligible) localDeliveryProviderError = "A entrega local está temporariamente indisponível porque não foi possível validar a distância. Tente novamente ou fale com a loja.";
+        const detail = error instanceof Error ? error.message : "Não foi possível validar a distância.";
+        console.error("calculate-shipping:local-delivery", detail);
+        if (localDeliveryEligible) localDeliveryProviderError = detail;
       }
     }
     if (localDeliveryRangeError) return reply(req, { error: localDeliveryRangeError, reason: "local_delivery_out_of_range" }, 422);
