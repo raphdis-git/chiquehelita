@@ -143,6 +143,8 @@ Deno.serve(async (req) => {
 
     const localOptions: any[] = [];
     let localDeliveryRangeError = "";
+    let localDeliveryProviderError = "";
+    let localDeliveryEligible = false;
     if (settings.local_delivery_enabled && Array.isArray(settings.local_delivery_cities) && Array.isArray(settings.local_delivery_distance_ranges)) {
       try {
         const addressResponse = await fetch(`https://viacep.com.br/ws/${destination}/json/`);
@@ -152,18 +154,31 @@ Deno.serve(async (req) => {
         const destinationState = String(address.uf ?? "").toUpperCase();
         const configuredState = String(settings.local_delivery_origin_state ?? "").toUpperCase();
         if (!address.erro && allowedCity && destinationState === configuredState) {
+          localDeliveryEligible = true;
           const field = (name: string) => String(destinationAddress?.[name] ?? "").trim().slice(0, 120);
           const origin = [settings.local_delivery_origin_address, settings.local_delivery_origin_number, settings.local_delivery_origin_district, settings.local_delivery_origin_city, settings.local_delivery_origin_state, settings.local_delivery_origin_postal_code].filter(Boolean).join(", ");
           const destinationFull = [field("address") || address.logradouro, field("number"), field("district") || address.bairro, address.localidade, address.uf, destination].filter(Boolean).join(", ");
-          const mapsKey = Deno.env.get("GOOGLE_MAPS_ROUTES_API_KEY")?.trim();
-          if (!mapsKey) throw new Error("A chave de cálculo de rotas da entrega local não está configurada.");
-          const routeResponse = await fetch("https://routes.googleapis.com/directions/v2:computeRoutes", {
+          const routesKey = Deno.env.get("OPENROUTESERVICE_API_KEY")?.trim();
+          if (!routesKey) throw new Error("A chave do OpenRouteService ainda não está configurada.");
+          const geocode = async (text: string) => {
+            const url = new URL("https://api.openrouteservice.org/geocode/search");
+            url.searchParams.set("text", text);
+            url.searchParams.set("boundary.country", "BR");
+            url.searchParams.set("size", "1");
+            const response = await fetch(url, { headers:{ "Authorization":routesKey, "Accept":"application/json" } });
+            const result = await response.json().catch(() => ({}));
+            const coordinates = result?.features?.[0]?.geometry?.coordinates;
+            if (!response.ok || !Array.isArray(coordinates) || coordinates.length !== 2 || coordinates.some((value: unknown) => !Number.isFinite(Number(value)))) throw new Error("Não foi possível localizar um dos endereços da entrega local.");
+            return coordinates.map(Number);
+          };
+          const [originCoordinates, destinationCoordinates] = await Promise.all([geocode(origin), geocode(destinationFull)]);
+          const routeResponse = await fetch("https://api.openrouteservice.org/v2/directions/driving-car", {
             method: "POST",
-            headers: { "Content-Type": "application/json", "X-Goog-Api-Key": mapsKey, "X-Goog-FieldMask": "routes.distanceMeters" },
-            body: JSON.stringify({ origin:{ address:origin }, destination:{ address:destinationFull }, travelMode:"DRIVE", routingPreference:"TRAFFIC_UNAWARE" }),
+            headers: { "Authorization":routesKey, "Content-Type":"application/json", "Accept":"application/json" },
+            body: JSON.stringify({ coordinates:[originCoordinates,destinationCoordinates], instructions:false, geometry:false }),
           });
           const route = await routeResponse.json().catch(() => ({}));
-          const distanceMeters = Number(route?.routes?.[0]?.distanceMeters);
+          const distanceMeters = Number(route?.routes?.[0]?.summary?.distance);
           if (!routeResponse.ok || !Number.isFinite(distanceMeters) || distanceMeters <= 0) throw new Error("Não foi possível calcular a rota da entrega local.");
           const distanceKm = distanceMeters / 1000;
           const ranges = settings.local_delivery_distance_ranges
@@ -184,9 +199,11 @@ Deno.serve(async (req) => {
         }
       } catch (error) {
         console.error("calculate-shipping:local-delivery", error instanceof Error ? error.message : error);
+        if (localDeliveryEligible) localDeliveryProviderError = "A entrega local está temporariamente indisponível porque não foi possível validar a distância. Tente novamente ou fale com a loja.";
       }
     }
     if (localDeliveryRangeError) return reply(req, { error: localDeliveryRangeError, reason: "local_delivery_out_of_range" }, 422);
+    if (localDeliveryProviderError) return reply(req, { error: localDeliveryProviderError, reason: "local_delivery_route_unavailable" }, 503);
     if (!settings.melhor_envio_enabled) {
       if (localOptions.length) return reply(req, { options: localOptions });
       return reply(req, { error: "A entrega local não atende a cidade informada." });
