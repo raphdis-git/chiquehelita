@@ -58,4 +58,3 @@ using (exists (
 drop policy if exists product_variant_images_admin_read_all on public.product_variant_images;
 create policy product_variant_images_admin_read_all on public.product_variant_images
 for select to authenticated using (public.is_admin());
-

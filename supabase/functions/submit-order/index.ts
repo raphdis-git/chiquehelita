@@ -24,7 +24,7 @@ Deno.serve(async (req) => {
     const taxId = digits(customer.taxId), phone = digits(customer.phone), postalCode = digits(customer.postalCode);
     if (![11,14].includes(taxId.length) || !/^\d{10,11}$/.test(phone) || !/^\d{8}$/.test(postalCode)) return reply({ error: "Dados cadastrais inválidos." }, 400);
     const email = text(customer.email);
-    if ((email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) || text(customer.name).split(/\s+/).length < 2 || text(customer.address).length < 3 || !text(customer.addressNumber) || text(customer.district).length < 2 || text(customer.city).length < 2 || !/^[A-Za-z]{2}$/.test(text(customer.state)) || !["delivery","pickup"].includes(customer.fulfillment) || !text(customer.payment) || text(customer.notes,1000).length < 2) return reply({ error: "Preencha todos os campos obrigatórios corretamente." }, 400);
+    if ((email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) || text(customer.name).split(/\s+/).length < 2 || text(customer.address).length < 3 || !text(customer.addressNumber) || text(customer.district).length < 2 || text(customer.city).length < 2 || !/^[A-Za-z]{2}$/.test(text(customer.state)) || !["delivery","pickup"].includes(customer.fulfillment) || !text(customer.payment)) return reply({ error: "Preencha todos os campos obrigatórios corretamente." }, 400);
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const client = createClient(supabaseUrl, serviceKey(), { auth: { persistSession: false, autoRefreshToken: false } });
     const ids = lines.map((line: any) => line.variantId);
@@ -46,7 +46,7 @@ Deno.serve(async (req) => {
     const productsAmount = items.reduce((sum: number, item: any) => sum + item.subtotal, 0);
     let selectedShipping: any = null;
     if (customer.fulfillment === "delivery") {
-      if (shipping?.provider !== "melhor_envio" || !text(shipping.serviceId, 40)) return reply({ error: "Calcule e selecione uma opção de frete." }, 400);
+      if (!["melhor_envio","local_delivery"].includes(shipping?.provider) || !text(shipping.serviceId, 40)) return reply({ error: "Calcule e selecione uma opção de frete." }, 400);
       const quoteResponse = await fetch(`${supabaseUrl}/functions/v1/calculate-shipping`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -54,15 +54,21 @@ Deno.serve(async (req) => {
       });
       const quote = await quoteResponse.json().catch(() => ({}));
       if (!quoteResponse.ok) return reply({ error: quote.error || "Não foi possível confirmar o frete." }, 400);
-      selectedShipping = quote.options?.find((option: any) => String(option.serviceId) === String(shipping.serviceId));
+      selectedShipping = quote.options?.find((option: any) => option.provider === shipping.provider && String(option.serviceId) === String(shipping.serviceId));
       if (!selectedShipping) return reply({ error: "A opção de frete escolhida não está mais disponível. Calcule novamente." }, 400);
     }
     const shippingPrice = Number(selectedShipping?.price || 0);
     const totalAmount = Number((productsAmount + shippingPrice).toFixed(2));
-    const { data: order, error: orderError } = await client.from("orders").insert({ customer_name:text(customer.name), customer_email:email, customer_tax_id:taxId, customer_phone:phone, address:text(customer.address), address_number:text(customer.addressNumber), district:text(customer.district), city:text(customer.city), state:text(customer.state,2).toUpperCase(), postal_code:postalCode, fulfillment:customer.fulfillment, payment_method:text(customer.payment), notes:text(customer.notes,1000), total_quantity:totalQuantity, products_amount:productsAmount, shipping_provider:selectedShipping?.provider ?? null, shipping_service_id:selectedShipping?.serviceId ?? null, shipping_service_name:selectedShipping?.serviceName ?? null, shipping_company:selectedShipping?.company ?? null, shipping_price:shippingPrice, shipping_delivery_min_days:selectedShipping?.deliveryMinDays ?? null, shipping_delivery_max_days:selectedShipping?.deliveryMaxDays ?? null, shipping_quoted_at:selectedShipping ? new Date().toISOString() : null, total_amount:totalAmount }).select("id,order_number").single();
+    const paymentToken = crypto.randomUUID();
+    const { data: order, error: orderError } = await client.from("orders").insert({ customer_name:text(customer.name), customer_email:email, customer_tax_id:taxId, customer_phone:phone, address:text(customer.address), address_number:text(customer.addressNumber), district:text(customer.district), city:text(customer.city), state:text(customer.state,2).toUpperCase(), postal_code:postalCode, fulfillment:customer.fulfillment, payment_method:text(customer.payment), notes:text(customer.notes,1000), total_quantity:totalQuantity, products_amount:productsAmount, shipping_provider:selectedShipping?.provider ?? null, shipping_service_id:selectedShipping?.serviceId ?? null, shipping_service_name:selectedShipping?.serviceName ?? null, shipping_company:selectedShipping?.company ?? null, shipping_price:shippingPrice, shipping_delivery_min_days:selectedShipping?.deliveryMinDays ?? null, shipping_delivery_max_days:selectedShipping?.deliveryMaxDays ?? null, shipping_quoted_at:selectedShipping ? new Date().toISOString() : null, total_amount:totalAmount, payment_checkout_token:paymentToken }).select("id,order_number").single();
     if (orderError) throw orderError;
     const { error: itemsError } = await client.from("order_items").insert(items.map((item:any)=>({ ...item, order_id:order.id })));
     if (itemsError) { await client.from("orders").delete().eq("id", order.id); throw itemsError; }
-    return reply({ orderNumber: order.order_number, productsAmount, shipping: selectedShipping, totalAmount });
+    const { error: inventoryError } = await client.rpc("commit_order_inventory", { p_order_id: order.id });
+    if (inventoryError) {
+      await client.from("orders").delete().eq("id", order.id);
+      throw new Error(inventoryError.message.includes("Estoque insuficiente") ? inventoryError.message : "Não foi possível reservar o estoque do pedido.");
+    }
+    return reply({ orderNumber: order.order_number, paymentToken, productsAmount, shipping: selectedShipping, totalAmount });
   } catch (error) { return reply({ error: error instanceof Error ? error.message : "Não foi possível registrar o pedido." }, 400); }
 });

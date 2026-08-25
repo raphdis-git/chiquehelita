@@ -19,6 +19,9 @@
 .admin-order-status.status-cancelled { background: #fff0f0; color: #b42318; }
 .admin-order-status.status-shipped { background: #eef4ff; color: #175cd3; }
 .admin-order-details { border-top: 1px solid var(--admin-border); background: #fff; animation: admin-order-open .18s ease-out; }
+.admin-order-edit-toolbar{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:16px 19px 0}.admin-order-edit-toolbar>div{display:grid;gap:3px}.admin-order-edit-toolbar span{color:var(--admin-muted);font-size:11px}.admin-order-edit-toolbar button{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.admin-order-edit-form{margin:16px 19px 18px;padding:17px;border:1px solid #f1bdd6;border-radius:12px;background:#fff8fc}.admin-order-edit-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}.admin-order-edit-grid label{display:grid;gap:6px;font-size:11px;font-weight:800}.admin-order-edit-grid label>span{color:var(--admin-muted);font-size:9px;font-weight:500}.admin-order-edit-grid .wide{grid-column:1/-1}.admin-order-edit-grid input,.admin-order-edit-grid select,.admin-order-edit-grid textarea{width:100%;padding:10px 11px;border:1px solid var(--admin-border);border-radius:8px;background:#fff;color:var(--admin-text);font:inherit}.admin-order-edit-grid input:focus,.admin-order-edit-grid select:focus,.admin-order-edit-grid textarea:focus{outline:3px solid #f6068720;border-color:var(--admin-pink)}.admin-order-edit-grid :disabled{background:#f2f2f4;color:#8a8790}.admin-order-edit-warning,.admin-order-edit-error{margin:13px 0 0;padding:10px;border-radius:8px;font-size:11px}.admin-order-edit-warning{background:#fff3da;color:#805900}.admin-order-edit-error{background:#fff0f0;color:#b42318}.admin-order-edit-actions{display:flex;justify-content:flex-end;margin-top:14px}.admin-order-edit-actions button{display:inline-flex;align-items:center;gap:7px}
+.admin-order-edit-grid .admin-postal-status{color:#067647;font-size:10px}.admin-order-edit-grid .admin-postal-error{color:#b42318;font-size:10px}
 @keyframes admin-order-open { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
 .admin-order-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; padding: 18px 19px; }
 .admin-order-columns > div { padding: 14px; border: 1px solid var(--admin-border); border-radius: 10px; }
@@ -29,9 +32,12 @@
 .admin-order-items span { font-weight: 700; }
 .admin-order-items small { display: block; color: var(--admin-muted); font-weight: 400; margin-top: 4px; }
 .admin-order-notes { margin: 0 19px 16px; padding: 11px; border-radius: 8px; background: #fff7fb; font-size: 12px; }
-.admin-order-details > footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 17px 19px; background: #fafafa; }
-.admin-order-details > footer label { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; }
-.admin-order-details > footer select { padding: 9px; border: 1px solid var(--admin-border); border-radius: 8px; background: #fff; }
+.admin-order-details > footer.admin-order-status-control { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin: 0 19px 18px; padding: 14px 15px; border: 1px solid var(--admin-border); border-radius: 10px; background: #fff7fb; color: var(--admin-text); }
+.admin-order-status-control > div { display: grid; gap: 4px; }
+.admin-order-status-control > div strong { font-size: 14px; }
+.admin-order-status-control > div span { max-width: 520px; color: var(--admin-muted); font-size: 11px; line-height: 1.4; }
+.admin-order-details > footer.admin-order-status-control label { display: grid; flex: 0 0 180px; gap: 5px; color: var(--admin-text); font-size: 11px; font-weight: 800; }
+.admin-order-details > footer.admin-order-status-control select { width: 100%; padding: 9px; border: 1px solid var(--admin-border); border-radius: 8px; background: #fff; color: var(--admin-text); }
 
 @media (max-width: 700px) {
   .admin-order-summary { align-items: flex-start; padding: 14px; }
@@ -41,7 +47,12 @@
   .admin-order-summary-total span { display: none; }
   .admin-order-summary-total svg { grid-column: auto; justify-self: end; }
   .admin-order-columns { grid-template-columns: 1fr; padding: 14px; }
-  .admin-order-details > footer { align-items: flex-start; flex-direction: column; }
-  .admin-order-details > footer label,
-  .admin-order-details > footer select { width: 100%; }
+  .admin-order-edit-toolbar{align-items:flex-start;flex-direction:column;padding:14px 14px 0}.admin-order-edit-grid{grid-template-columns:1fr}.admin-order-edit-grid .wide{grid-column:auto}.admin-order-edit-form{margin:14px;padding:13px}.admin-order-edit-actions button{width:100%;justify-content:center}
+  .admin-order-details > footer.admin-order-status-control { align-items: stretch; flex-direction: column; margin: 0 14px 14px; }
+  .admin-order-details > footer.admin-order-status-control label,
+  .admin-order-details > footer.admin-order-status-control select { width: 100%; }
 }
+
+.admin-order-requote{display:grid;grid-template-columns:1fr auto;gap:13px;align-items:center;margin:14px 19px;padding:16px;border:1px solid #efabd0;border-radius:12px;background:#fff8fc}.admin-order-requote>div:first-child{display:grid;gap:4px}.admin-order-requote>div:first-child span{color:var(--admin-muted);font-size:11px}.admin-order-requote>.admin-secondary-button{display:inline-flex;align-items:center;gap:7px}.admin-order-quote-options{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.admin-order-quote-options button{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px;border:1px solid var(--admin-border);border-radius:9px;background:#fff;color:var(--admin-text);text-align:left;cursor:pointer}.admin-order-quote-options button:hover{border-color:var(--admin-pink);box-shadow:0 0 0 3px #f6068714}.admin-order-quote-options span{display:grid;gap:3px}.admin-order-quote-options small{color:var(--admin-muted)}.admin-order-quote-options b{color:var(--admin-pink);white-space:nowrap}
+
+@media (max-width:700px){.admin-order-requote{grid-template-columns:1fr;margin:14px;padding:13px}.admin-order-requote>.admin-secondary-button{justify-content:center}.admin-order-quote-options{grid-column:auto;grid-template-columns:1fr}}

@@ -12,4 +12,3 @@ comment on column public.products.shipping_height_cm is 'Altura individual usada
 comment on column public.products.shipping_width_cm is 'Largura individual usada na composição dos volumes de frete.';
 comment on column public.products.shipping_length_cm is 'Comprimento individual usado na composição dos volumes de frete.';
 comment on column public.store_settings.packaging_tare_grams is 'Peso adicional da embalagem externa, em gramas, por volume.';
-

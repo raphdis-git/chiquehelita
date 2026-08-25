@@ -1,4 +1,3 @@
-
 .mobile-menu{display:none}
 .search-panel{position:fixed;inset:104px 0 0;background:rgba(36,31,34,.55);z-index:19;padding:28px 6%;overflow:auto}
 .search-box,.search-results{width:min(760px,100%);margin:auto;background:#fff}
@@ -23,4 +22,3 @@
   .search-panel{inset:82px 0 0;padding:16px 4%}
   .search-results>div:not(.search-empty){grid-template-columns:1fr}
 }
-

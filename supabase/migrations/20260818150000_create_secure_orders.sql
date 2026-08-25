@@ -1,4 +1,3 @@
-
 create table public.orders (
   id uuid primary key default gen_random_uuid(),
   order_number bigint generated always as identity unique,
@@ -52,4 +51,3 @@ create policy order_items_admin_select on public.order_items for select to authe
 revoke all on public.orders, public.order_items from anon, authenticated;
 grant select, update on public.orders to authenticated;
 grant select on public.order_items to authenticated;
-

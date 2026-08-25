@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, ArrowRight, Calculator, MessageCircle, Truck } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Calculator, CheckCircle2, CreditCard, MessageCircle, Truck, XCircle } from 'lucide-react';
 import { buildWhatsAppMessage, formatPhone, formatTaxId, validateCustomer } from './data/order';
 import { supabase } from './lib/supabase';
 
@@ -13,7 +13,7 @@ function savedCustomer() {
   catch { return initialCustomer; }
 }
 
-export default function CheckoutForm({ whatsapp, lines, summary, money, onCompleted, onCancel }) {
+export default function CheckoutForm({ whatsapp, infinitepayEnabled = false, infinitepayTestMode = true, lines, summary, money, onCompleted, onCancel }) {
   const [step, setStep] = useState(0);
   const [customer, setCustomer] = useState(savedCustomer);
   const [errors, setErrors] = useState({});
@@ -26,6 +26,8 @@ export default function CheckoutForm({ whatsapp, lines, summary, money, onComple
   const [postalCodeLoading, setPostalCodeLoading] = useState(false);
   const [postalCodeError, setPostalCodeError] = useState('');
   const [postalCodeResolved, setPostalCodeResolved] = useState(false);
+  const [paymentTest, setPaymentTest] = useState(null);
+  const [onlinePaymentEnabled, setOnlinePaymentEnabled] = useState(infinitepayEnabled);
   const update = (field, value) => setCustomer((current) => ({ ...current, [field]: value }));
   const updatePostalCode = (value) => {
     const postalCode = onlyDigits(value, 8);
@@ -38,6 +40,13 @@ export default function CheckoutForm({ whatsapp, lines, summary, money, onComple
   const orderTotal = summary.total + (selectedShipping?.price ?? 0);
 
   useEffect(() => { sessionStorage.setItem(draftKey, JSON.stringify(customer)); }, [customer]);
+  useEffect(() => {
+    let active = true;
+    supabase.from('store_settings').select('infinitepay_enabled').limit(1).maybeSingle().then(({ data }) => {
+      if (active) setOnlinePaymentEnabled(Boolean(data?.infinitepay_enabled));
+    });
+    return () => { active = false; };
+  }, []);
   useEffect(() => { setShippingOptions([]); setSelectedShipping(null); setShippingError(''); }, [customer.postalCode, customer.fulfillment, lines]);
   useEffect(() => {
     if (!/^\d{8}$/.test(customer.postalCode)) { setPostalCodeError(''); setPostalCodeLoading(false); setPostalCodeResolved(false); return undefined; }
@@ -108,12 +117,44 @@ export default function CheckoutForm({ whatsapp, lines, summary, money, onComple
     const shipping = selectedShipping ? { provider: selectedShipping.provider, serviceId: selectedShipping.serviceId } : null;
     const { data, error } = await supabase.functions.invoke('submit-order', { body: { customer, lines: payloadLines, shipping } });
     if (error || !data?.orderNumber) { setSubmitError(data?.error || 'Não foi possível registrar o pedido. Tente novamente.'); setSubmitting(false); return; }
+    if (onlinePaymentEnabled && ['Pix', 'Cartão'].includes(customer.payment)) {
+      const paymentResult = await supabase.functions.invoke('infinitepay-payment', { body: { action: 'create', orderNumber: data.orderNumber, paymentToken: data.paymentToken } });
+      if (paymentResult.error || (!paymentResult.data?.testMode && !paymentResult.data?.url)) {
+        setSubmitError(paymentResult.data?.error || 'O pedido foi criado, mas não foi possível abrir o pagamento. Entre em contato com a loja.');
+        setSubmitting(false); return;
+      }
+      if (paymentResult.data.testMode) {
+        setPaymentTest({ orderNumber: data.orderNumber, paymentToken: data.paymentToken, testToken: paymentResult.data.testToken, amount: paymentResult.data.amount });
+        setSubmitting(false); return;
+      }
+      sessionStorage.removeItem(draftKey);
+      onCompleted?.({ orderNumber: data.orderNumber, redirecting: true });
+      window.location.assign(paymentResult.data.url);
+      return;
+    }
     const message = buildWhatsAppMessage({ customer, lines, summary, money, orderNumber: data.orderNumber, shipping: data.shipping, productsAmount: data.productsAmount, totalAmount: data.totalAmount });
     window.open(`https://wa.me/${whatsapp}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
     sessionStorage.removeItem(draftKey);
     onCompleted?.({ orderNumber: data.orderNumber });
     setSubmitting(false);
   }
+
+  async function finishPaymentTest(result) {
+    if (!paymentTest) return;
+    setSubmitting(true); setSubmitError('');
+    const response = await supabase.functions.invoke('infinitepay-payment', { body: { action: 'complete_test', orderNumber: paymentTest.orderNumber, paymentToken: paymentTest.paymentToken, testToken: paymentTest.testToken, result } });
+    if (response.error || typeof response.data?.approved !== 'boolean') {
+      setSubmitError(response.data?.error || 'Não foi possível concluir a simulação.'); setSubmitting(false); return;
+    }
+    if (!response.data.approved) {
+      setPaymentTest((current) => ({ ...current, declined: true })); setSubmitError('Pagamento recusado no teste. Você pode simular uma nova tentativa no mesmo pedido.'); setSubmitting(false); return;
+    }
+    sessionStorage.removeItem(draftKey);
+    onCompleted?.({ orderNumber: paymentTest.orderNumber, paid: true, testMode: true });
+    setSubmitting(false);
+  }
+
+  if (paymentTest) return <section className="infinitepay-test-panel" role="status"><div className="infinitepay-test-heading"><CreditCard size={24}/><div><strong>Simulação da InfinitePay</strong><span>Nenhuma cobrança será realizada neste teste.</span></div><b>MODO TESTE</b></div><p>Pedido #{paymentTest.orderNumber} · Total {money(paymentTest.amount)}</p>{submitError && <p className="checkout-error">{submitError}</p>}<div className="infinitepay-test-actions"><button type="button" className="test-payment-declined" disabled={submitting} onClick={() => finishPaymentTest('declined')}><XCircle size={18}/>Simular recusado</button><button type="button" className="test-payment-approved" disabled={submitting} onClick={() => finishPaymentTest('approved')}><CheckCircle2 size={18}/>{submitting ? 'Processando...' : 'Simular aprovado'}</button></div></section>;
 
   return <form className="checkout-form checkout-steps" onSubmit={submit} noValidate>
     <nav className="checkout-progress" aria-label="Etapas do checkout">{['Seus dados', 'Entrega', 'Revisão'].map((label, index) => <div key={label} className={index === step ? 'active' : index < step ? 'completed' : ''}><span>{index < step ? '✓' : index + 1}</span><strong>{label}</strong></div>)}</nav>

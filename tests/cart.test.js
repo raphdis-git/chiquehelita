@@ -67,4 +67,3 @@ test('resumo e linhas preservam variação, tamanho, quantidade e total', () => 
   assert.equal(summary.generalWholesaleActive, false);
   assert.equal(summary.total, 270);
 });
-

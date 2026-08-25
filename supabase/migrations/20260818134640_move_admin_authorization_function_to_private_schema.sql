@@ -7,4 +7,3 @@ alter function private.is_admin() set search_path = '';
 
 revoke all on function private.is_admin() from public;
 grant execute on function private.is_admin() to authenticated;
-

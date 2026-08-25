@@ -41,4 +41,3 @@ grant select, insert, update, delete on table
   public.product_variant_images,
   public.catalog_options
 to authenticated;
-

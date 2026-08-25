@@ -71,4 +71,3 @@ using (private.is_admin() or exists (
   where v.id = product_variant_images.variant_id
     and v.active = true and p.active = true
 ));
-

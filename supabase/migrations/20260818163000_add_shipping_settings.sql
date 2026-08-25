@@ -15,4 +15,3 @@ comment on column public.store_settings.package_weight_grams is 'Peso médio, em
 comment on column public.store_settings.max_items_per_package is 'Quantidade máxima de vestidos considerada em cada pacote.';
 comment on column public.store_settings.shipping_handling_days is 'Prazo adicional de preparação somado ao prazo da transportadora.';
 comment on column public.store_settings.shipping_markup_percent is 'Acréscimo percentual aplicado ao valor retornado pela transportadora.';
-
