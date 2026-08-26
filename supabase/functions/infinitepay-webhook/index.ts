@@ -28,7 +28,7 @@ Deno.serve(async (req) => {
     const expected = Math.round(Number(order.total_amount) * 100);
     if (!verification.ok || !checked.paid || Number(checked.amount) !== expected) return respond({ success: false, message: "Pagamento não confirmado" }, 400);
     const { error } = await client.from("orders").update({
-      payment_provider: "infinitepay", payment_status: "paid", payment_test_mode: false,
+      payment_provider: "infinitepay", payment_status: "paid", payment_test_mode: false, checkout_state: "order",
       payment_invoice_slug: event.invoice_slug, payment_transaction_nsu: event.transaction_nsu,
       payment_receipt_url: event.receipt_url || null, payment_paid_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     }).eq("id", order.id);
