@@ -956,10 +956,13 @@ export default function AdminApp() {
   }, [orders]);
   const clients = useMemo(() => {
     const grouped = new Map();
-    orders.filter((order) => order.status !== 'cancelled').forEach((order) => {
+    orders.forEach((order) => {
       const key = order.customer_tax_id;
-      const current = grouped.get(key) ?? { taxId:key, name:order.customer_name, email:order.customer_email, phone:order.customer_phone, city:order.city, state:order.state, orders:0, total:0, lastOrder:order.created_at };
-      current.orders += 1; current.total += Number(order.total_amount);
+      const current = grouped.get(key) ?? { taxId:key, name:order.customer_name, email:order.customer_email, phone:order.customer_phone, city:order.city, state:order.state, orders:0, approvedTotal:0, cancelledTotal:0, lastOrder:order.created_at };
+      const amount = Number(order.total_amount) || 0;
+      current.orders += 1;
+      if (order.payment_status === 'paid') current.approvedTotal += amount;
+      if (order.status === 'cancelled' || order.payment_status === 'cancelled') current.cancelledTotal += amount;
       if (new Date(order.created_at) > new Date(current.lastOrder)) { current.lastOrder = order.created_at; current.name = order.customer_name; current.email = order.customer_email; current.phone = order.customer_phone; current.city = order.city; current.state = order.state; }
       grouped.set(key, current);
     });
@@ -1083,9 +1086,9 @@ export default function AdminApp() {
           </section>}
 
           {adminSection === 'clients' && <section className="admin-panel">
-            <div className="admin-panel-heading"><div><p className="admin-eyebrow">RELACIONAMENTO</p><h2>Clientes</h2><p>Visão consolidada a partir dos pedidos não cancelados.</p></div></div>
+            <div className="admin-panel-heading"><div><p className="admin-eyebrow">RELACIONAMENTO</p><h2>Clientes</h2><p>Visão consolidada de todos os pedidos, pagamentos aprovados e cancelamentos.</p></div></div>
             <div className="admin-client-search"><label>Buscar cliente<input value={clientSearch} onChange={(event) => setClientSearch(event.target.value)} placeholder="Nome, e-mail, CPF/CNPJ, telefone ou cidade"/></label><span>{clients.length} clientes encontrados</span></div>
-            {clients.length === 0 ? <div className="admin-empty-state">Nenhum cliente corresponde à busca.</div> : <div className="admin-client-grid">{clients.map((client) => <article className="admin-client-card" key={client.taxId}><header><div className="admin-client-avatar">{client.name.split(/\s+/).slice(0,2).map((part) => part[0]).join('').toUpperCase()}</div><div><h3>{client.name}</h3><span>{client.city}/{client.state}</span></div></header><div className="admin-client-contact"><p>{client.email}</p><p>{client.phone}</p><p>CPF/CNPJ: {client.taxId}</p></div><div className="admin-client-stats"><div><span>Pedidos</span><strong>{client.orders}</strong></div><div><span>Total comprado</span><strong>{money(client.total)}</strong></div></div><footer>Última compra: {new Date(client.lastOrder).toLocaleDateString('pt-BR')}</footer></article>)}</div>}
+            {clients.length === 0 ? <div className="admin-empty-state">Nenhum cliente corresponde à busca.</div> : <div className="admin-client-grid">{clients.map((client) => <article className="admin-client-card" key={client.taxId}><header><div className="admin-client-avatar">{client.name.split(/\s+/).slice(0,2).map((part) => part[0]).join('').toUpperCase()}</div><div><h3>{client.name}</h3><span>{client.city}/{client.state}</span></div></header><div className="admin-client-contact"><p>{client.email || 'E-mail não informado'}</p><p>{client.phone}</p><p>CPF/CNPJ: {client.taxId}</p></div><div className="admin-client-stats"><div><span>Total de pedidos</span><strong>{client.orders}</strong></div><div className="approved"><span>Valor aprovado</span><strong>{money(client.approvedTotal)}</strong></div><div className="cancelled"><span>Valor cancelado</span><strong>{money(client.cancelledTotal)}</strong></div></div><footer>Último pedido: {new Date(client.lastOrder).toLocaleDateString('pt-BR')}</footer></article>)}</div>}
           </section>}
 
           {adminSection === 'categories' && <section className="admin-panel">
