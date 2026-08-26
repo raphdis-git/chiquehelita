@@ -59,7 +59,8 @@ Deno.serve(async (req) => {
     }
     const shippingPrice = Number(selectedShipping?.price || 0);
     const totalAmount = Number((productsAmount + shippingPrice).toFixed(2));
-    const { data: order, error: orderError } = await client.from("orders").insert({ customer_name:text(customer.name), customer_email:email, customer_tax_id:taxId, customer_phone:phone, address:text(customer.address), address_number:text(customer.addressNumber), district:text(customer.district), city:text(customer.city), state:text(customer.state,2).toUpperCase(), postal_code:postalCode, fulfillment:customer.fulfillment, payment_method:text(customer.payment), notes:text(customer.notes,1000), total_quantity:totalQuantity, products_amount:productsAmount, shipping_provider:selectedShipping?.provider ?? null, shipping_service_id:selectedShipping?.serviceId ?? null, shipping_service_name:selectedShipping?.serviceName ?? null, shipping_company:selectedShipping?.company ?? null, shipping_price:shippingPrice, shipping_delivery_min_days:selectedShipping?.deliveryMinDays ?? null, shipping_delivery_max_days:selectedShipping?.deliveryMaxDays ?? null, shipping_quoted_at:selectedShipping ? new Date().toISOString() : null, total_amount:totalAmount }).select("id,order_number").single();
+    const paymentToken = crypto.randomUUID();
+    const { data: order, error: orderError } = await client.from("orders").insert({ customer_name:text(customer.name), customer_email:email, customer_tax_id:taxId, customer_phone:phone, address:text(customer.address), address_number:text(customer.addressNumber), district:text(customer.district), city:text(customer.city), state:text(customer.state,2).toUpperCase(), postal_code:postalCode, fulfillment:customer.fulfillment, payment_method:text(customer.payment), notes:text(customer.notes,1000), total_quantity:totalQuantity, products_amount:productsAmount, shipping_provider:selectedShipping?.provider ?? null, shipping_service_id:selectedShipping?.serviceId ?? null, shipping_service_name:selectedShipping?.serviceName ?? null, shipping_company:selectedShipping?.company ?? null, shipping_price:shippingPrice, shipping_delivery_min_days:selectedShipping?.deliveryMinDays ?? null, shipping_delivery_max_days:selectedShipping?.deliveryMaxDays ?? null, shipping_quoted_at:selectedShipping ? new Date().toISOString() : null, total_amount:totalAmount, payment_checkout_token:paymentToken }).select("id,order_number").single();
     if (orderError) throw orderError;
     const { error: itemsError } = await client.from("order_items").insert(items.map((item:any)=>({ ...item, order_id:order.id })));
     if (itemsError) { await client.from("orders").delete().eq("id", order.id); throw itemsError; }
@@ -68,7 +69,6 @@ Deno.serve(async (req) => {
       await client.from("orders").delete().eq("id", order.id);
       throw new Error(inventoryError.message.includes("Estoque insuficiente") ? inventoryError.message : "Não foi possível reservar o estoque do pedido.");
     }
-    return reply({ orderNumber: order.order_number, productsAmount, shipping: selectedShipping, totalAmount });
+    return reply({ orderNumber: order.order_number, paymentToken, productsAmount, shipping: selectedShipping, totalAmount });
   } catch (error) { return reply({ error: error instanceof Error ? error.message : "Não foi possível registrar o pedido." }, 400); }
 });
-
