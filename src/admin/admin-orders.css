@@ -43,6 +43,9 @@
 .admin-payment-summary span,.admin-payment-summary small { color: var(--admin-muted); font-size: 11px; }
 .admin-payment-summary b { font-size: 13px; }
 .admin-payment-summary a { color: var(--admin-pink-dark); font-size: 11px; font-weight: 800; }
+.admin-cancel-payment { margin-top: 4px; padding: 8px 10px; border: 1px solid #fda29b; border-radius: 8px; background: #fff; color: #b42318; font: inherit; font-size: 11px; font-weight: 800; cursor: pointer; }
+.admin-cancel-payment:hover { background: #fef3f2; }
+.admin-cancel-payment:disabled { opacity: .6; cursor: wait; }
 .admin-payment-summary.payment-pending { border-color: #fedf89; background: #fffaeb; }
 .admin-payment-summary.payment-paid { border-color: #abefc6; background: #ecfdf3; }
 .admin-payment-summary.payment-paid b { color: #067647; }
