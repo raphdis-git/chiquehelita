@@ -124,11 +124,10 @@ export default function CheckoutForm({ whatsapp, infinitepayEnabled = false, inf
         setSubmitting(false); return;
       }
       if (paymentResult.data.testMode) {
-        setPaymentTest({ orderNumber: data.orderNumber, paymentToken: data.paymentToken, testToken: paymentResult.data.testToken, amount: paymentResult.data.amount });
+        setPaymentTest({ orderNumber: data.orderNumber, paymentToken: data.paymentToken, testToken: paymentResult.data.testToken, amount: paymentResult.data.amount, whatsappMessage: buildWhatsAppMessage({ customer, lines, summary, money, orderNumber: data.orderNumber, shipping: data.shipping, productsAmount: data.productsAmount, totalAmount: data.totalAmount }) });
         setSubmitting(false); return;
       }
-      sessionStorage.removeItem(draftKey);
-      onCompleted?.({ orderNumber: data.orderNumber, redirecting: true });
+      sessionStorage.setItem('chiquehelita-pending-payment', JSON.stringify({ orderNumber:data.orderNumber, paymentToken:data.paymentToken, whatsapp, message:buildWhatsAppMessage({ customer, lines, summary, money, orderNumber:data.orderNumber, shipping:data.shipping, productsAmount:data.productsAmount, totalAmount:data.totalAmount }) }));
       window.location.assign(paymentResult.data.url);
       return;
     }
@@ -150,6 +149,7 @@ export default function CheckoutForm({ whatsapp, infinitepayEnabled = false, inf
       setPaymentTest((current) => ({ ...current, declined: true })); setSubmitError('Pagamento recusado no teste. Você pode simular uma nova tentativa no mesmo pedido.'); setSubmitting(false); return;
     }
     sessionStorage.removeItem(draftKey);
+    window.open(`https://wa.me/${whatsapp}?text=${encodeURIComponent(paymentTest.whatsappMessage)}`, '_blank', 'noopener,noreferrer');
     onCompleted?.({ orderNumber: paymentTest.orderNumber, paid: true, testMode: true });
     setSubmitting(false);
   }

@@ -26,7 +26,7 @@ Deno.serve(async (req) => {
     const orderNumber = Number(body.orderNumber);
     if (!Number.isInteger(orderNumber) || orderNumber < 1) return reply({ error: "Pedido inválido." }, 400);
     const { data: order, error: orderError } = await client.from("orders")
-      .select("id,order_number,total_amount,shipping_price,payment_status,payment_checkout_token,customer_name,customer_email,customer_phone,postal_code,address,address_number,district,order_items(product_name,quantity,unit_price)")
+      .select("id,order_number,total_amount,shipping_price,payment_status,payment_checkout_token,checkout_state,customer_name,customer_email,customer_phone,postal_code,address,address_number,district,order_items(product_name,quantity,unit_price)")
       .eq("order_number", orderNumber).single();
     if (orderError || !order) return reply({ error: "Pedido não encontrado." }, 404);
     if (!body.paymentToken || body.paymentToken !== order.payment_checkout_token) return reply({ error: "Código de pagamento inválido." }, 403);
@@ -36,7 +36,7 @@ Deno.serve(async (req) => {
       if (!settings.infinitepay_test_mode || !body.testToken || body.testToken !== order.payment_checkout_token) return reply({ error: "Simulação inválida ou encerrada." }, 403);
       const approved = body.result === "approved";
       const { error } = await client.from("orders").update({
-        payment_status: approved ? "paid" : "failed",
+        payment_status: approved ? "paid" : "failed", checkout_state: approved ? "order" : "reservation",
         payment_transaction_nsu: approved ? `TESTE-${crypto.randomUUID()}` : null,
         payment_paid_at: approved ? new Date().toISOString() : null,
         updated_at: new Date().toISOString(),
@@ -44,6 +44,8 @@ Deno.serve(async (req) => {
       if (error) throw error;
       return reply({ approved, testMode: true });
     }
+
+    if (body.action === "status") return reply({ paid: order.payment_status === "paid" && order.checkout_state === "order", orderNumber: order.order_number });
 
     const token = order.payment_checkout_token;
     await client.from("orders").update({
