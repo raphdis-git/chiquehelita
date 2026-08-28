@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Ruler, Search, ShoppingBag, X } from 'lucide-react';
 import logo from './assets/Logo.png';
 import ProductGallery from './ProductGallery';
+import SiteFooter from './SiteFooter';
 
 const money = (value) => Number(value ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const totalStock = (product) => product.variants.reduce((total, variant) => total + variant.sizes.reduce((sum, size) => sum + size.stock, 0), 0);
@@ -51,7 +52,7 @@ export default function ProductPage({ product, selection, settings, cartSummary,
         </div>
       </article>
     </main>
-    <footer><div className="footer-brand"><img src={logo} alt="Chique Helita"/><p>Moda feminina com elegância e personalidade.</p></div><div><h4>Atendimento</h4><p>Segunda a sábado</p><p>WhatsApp da loja</p></div><div><h4>Compra</h4><p>Varejo e atacado</p><p>Mínimo geral: {settings.minimumWholesaleQuantity} peças</p></div></footer>
+    <SiteFooter whatsapp={settings.whatsapp}/>
     {cartDrawer}
     {sizeGuideOpen && <div className="size-guide-modal" role="dialog" aria-modal="true" aria-labelledby="size-guide-title" onClick={() => setSizeGuideOpen(false)}>
       <div className="size-guide-modal-content" onClick={(event) => event.stopPropagation()}>

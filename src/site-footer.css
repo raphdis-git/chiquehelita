@@ -1,0 +1,22 @@
+.site-footer{display:grid;grid-template-columns:2fr 1fr 1fr;align-items:center;gap:50px;padding:48px 10%;background:var(--primary);color:#fff}
+.site-footer .footer-brand img{width:205px;height:130px;object-fit:contain}
+.site-footer .footer-brand p{margin:8px 0 0}
+.footer-column{display:flex;flex-direction:column;align-items:flex-start;gap:13px}
+.footer-column h4{margin:0 0 5px;font-size:16px}
+.footer-column p{margin:0}
+.footer-column a,.footer-column button{display:inline-flex;align-items:center;gap:8px;padding:0;border:0;background:transparent;color:#fff;font:inherit;cursor:pointer}
+.footer-column a:hover,.footer-column button:hover{text-decoration:underline}
+.footer-column a svg:last-child{opacity:.7}
+.privacy-modal{position:fixed;inset:0;z-index:200;background:rgba(25,19,23,.72);display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(3px)}
+.privacy-modal-content{width:min(720px,100%);max-height:92vh;overflow:auto;border-radius:16px;background:#fff;color:var(--ink);box-shadow:0 28px 80px rgba(0,0,0,.3)}
+.privacy-modal-content>header{position:sticky;top:0;z-index:2;display:flex;align-items:flex-start;justify-content:space-between;gap:20px;padding:22px 24px;border-bottom:1px solid var(--line);background:#fff}
+.privacy-modal-content>header p{margin:0 0 5px;color:var(--primary);font-size:9px;font-weight:900;letter-spacing:.14em}
+.privacy-modal-content h2{margin:0;font:normal 28px Georgia,serif}
+.privacy-modal-content>header button{width:38px;height:38px;display:grid;place-items:center;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink);cursor:pointer}
+.privacy-copy{padding:22px 24px}
+.privacy-updated{margin:0 0 20px;color:var(--muted);font-size:11px}
+.privacy-copy section{margin-bottom:18px}
+.privacy-copy h3{margin:0 0 6px;font-size:14px}
+.privacy-copy section p{margin:0;color:var(--muted);font-size:12px;line-height:1.65}
+.privacy-modal-content>footer{position:sticky;bottom:0;display:flex;grid-template-columns:none;justify-content:flex-end;gap:0;padding:14px 24px;border-top:1px solid var(--line);background:#fff;color:var(--ink)}
+@media(max-width:760px){.site-footer{grid-template-columns:1fr;padding:42px 7%;gap:28px}.site-footer .footer-brand img{width:170px;height:110px}.privacy-modal{padding:8px}.privacy-modal-content>header,.privacy-copy{padding:18px}.privacy-modal-content h2{font-size:24px}}
