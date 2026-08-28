@@ -7,6 +7,10 @@
 .footer-column a,.footer-column button{display:inline-flex;align-items:center;gap:8px;padding:0;border:0;background:transparent;color:#fff;font:inherit;cursor:pointer}
 .footer-column a:hover,.footer-column button:hover{text-decoration:underline}
 .footer-column a svg:last-child{opacity:.7}
+.brand-social-icon{width:18px;height:18px;flex:0 0 18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.brand-social-icon .brand-social-dot{fill:currentColor;stroke:none}
+.brand-social-icon .brand-social-fill{fill:currentColor;stroke:none}
+.footer-column a:hover .brand-social-icon{transform:scale(1.08)}
 .privacy-modal{position:fixed;inset:0;z-index:200;background:rgba(25,19,23,.72);display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(3px)}
 .privacy-modal-content{width:min(720px,100%);max-height:92vh;overflow:auto;border-radius:16px;background:#fff;color:var(--ink);box-shadow:0 28px 80px rgba(0,0,0,.3)}
 .privacy-modal-content>header{position:sticky;top:0;z-index:2;display:flex;align-items:flex-start;justify-content:space-between;gap:20px;padding:22px 24px;border-bottom:1px solid var(--line);background:#fff}

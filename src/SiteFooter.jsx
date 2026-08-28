@@ -1,9 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { AtSign, ExternalLink, MessageCircle, ShieldCheck, X } from 'lucide-react';
+import { ExternalLink, ShieldCheck, X } from 'lucide-react';
 import logo from './assets/Logo.png';
 import './site-footer.css';
 
 const INSTAGRAM_URL = 'https://www.instagram.com/chiquehelita/';
+
+function WhatsAppIcon() {
+  return <svg className="brand-social-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 11.7a8.5 8.5 0 0 1-12.6 7.5L3.5 20.5l1.3-4.2A8.5 8.5 0 1 1 20.5 11.7Z"/><path className="brand-social-fill" d="M8.1 7.5c.2-.4.4-.4.7-.4h.5c.2 0 .4.1.5.4l.8 1.9c.1.3.1.5-.1.7l-.7.9c-.2.2-.1.4 0 .6.8 1.4 1.9 2.5 3.4 3.2.3.1.5.1.7-.1l.9-1.1c.2-.2.4-.3.7-.2l1.9.9c.3.1.4.3.4.5 0 .3-.2 1.5-1.1 2.1-.6.5-1.5.7-2.3.5-1.1-.3-2.8-.9-4.7-2.6-1.5-1.4-2.6-3.1-2.9-4.3-.4-1.2 0-2.3.4-2.8l.9-.2Z"/></svg>;
+}
+
+function InstagramIcon() {
+  return <svg className="brand-social-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4.1"/><circle className="brand-social-dot" cx="17.4" cy="6.7" r="1"/></svg>;
+}
 
 export default function SiteFooter({ whatsapp }) {
   const [privacyOpen, setPrivacyOpen] = useState(false);
@@ -25,8 +33,8 @@ export default function SiteFooter({ whatsapp }) {
   return <>
     <footer id="sobre" className="site-footer">
       <div className="footer-brand"><img src={logo} alt="Chique Helita"/><p>Moda feminina com elegância e personalidade.</p></div>
-      <div className="footer-column"><h4>Atendimento</h4><p>Segunda a sexta-feira</p>{whatsappNumber ? <a href={whatsappUrl} target="_blank" rel="noreferrer"><MessageCircle size={17}/>Falar no WhatsApp</a> : <p>WhatsApp temporariamente indisponível</p>}</div>
-      <div className="footer-column"><h4>Links</h4><a href={INSTAGRAM_URL} target="_blank" rel="noreferrer"><AtSign size={17}/>Instagram<ExternalLink size={13}/></a><button type="button" onClick={() => setPrivacyOpen(true)}><ShieldCheck size={17}/>Política de privacidade</button></div>
+      <div className="footer-column"><h4>Atendimento</h4><p>Segunda a sexta-feira</p>{whatsappNumber ? <a href={whatsappUrl} target="_blank" rel="noreferrer"><WhatsAppIcon/>Falar no WhatsApp</a> : <p>WhatsApp temporariamente indisponível</p>}</div>
+      <div className="footer-column"><h4>Links</h4><a href={INSTAGRAM_URL} target="_blank" rel="noreferrer"><InstagramIcon/>Instagram<ExternalLink size={13}/></a><button type="button" onClick={() => setPrivacyOpen(true)}><ShieldCheck size={17}/>Política de privacidade</button></div>
     </footer>
     {privacyOpen && <div className="privacy-modal" role="dialog" aria-modal="true" aria-labelledby="privacy-title" onClick={() => setPrivacyOpen(false)}>
       <article className="privacy-modal-content" onClick={(event) => event.stopPropagation()}>
